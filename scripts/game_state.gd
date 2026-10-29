@@ -9,10 +9,12 @@ const DEFAULT_LAYOUT := {
 	"joy": Vector2(0.72, 0.82),
 	"jump": Vector2(0.19, 0.84),
 	"grab": Vector2(0.42, 0.92),
+	"act": Vector2(0.40, 0.74),
 }
 
 var sounds := {}
 var skin := "egg"
+var course := "meadow"
 var layout := DEFAULT_LAYOUT.duplicate()
 var _slowmo_left := 0.0
 
@@ -21,6 +23,11 @@ func _ready() -> void:
 	load_settings()
 	for s in ["jump", "land", "fall", "break", "coin", "walking"]:
 		sounds[s] = load("res://assets/kenney/sounds/%s.ogg" % s)
+	for f in DirAccess.get_files_at("res://assets/kenney/sfx"):
+		# exported builds list "x.ogg.import" instead of "x.ogg"
+		var n := f.trim_suffix(".import")
+		if n.ends_with(".ogg") and not sounds.has(n.get_basename()):
+			sounds[n.get_basename()] = load("res://assets/kenney/sfx/" + n)
 
 func build() -> int:
 	return int(ProjectSettings.get_setting("application/config/build", 0))
@@ -33,6 +40,9 @@ func load_settings() -> void:
 	if cfg.load(SETTINGS_PATH) != OK:
 		return
 	skin = cfg.get_value("game", "skin", skin)
+	if not Player.SKINS.has(skin):
+		skin = "egg"
+	course = cfg.get_value("game", "course", course)
 	for k in DEFAULT_LAYOUT:
 		var v = cfg.get_value("controls", k, DEFAULT_LAYOUT[k])
 		if v is Vector2:
@@ -41,6 +51,7 @@ func load_settings() -> void:
 func save_settings() -> void:
 	var cfg := ConfigFile.new()
 	cfg.set_value("game", "skin", skin)
+	cfg.set_value("game", "course", course)
 	for k in layout:
 		cfg.set_value("controls", k, layout[k])
 	cfg.save(SETTINGS_PATH)

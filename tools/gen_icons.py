@@ -78,6 +78,13 @@ ICONS = {
     "jump": shape("M32 7 L55 32 H42 V55 H22 V32 H9 Z"),
     "grab": "".join(shape(rrect_d(x, y, 10, 24, 5)) for x, y in [(12, 14), (23, 8), (34, 9), (45, 15)])
     + shape(rrect_d(11, 26, 44, 30, 13)) + shape(rrect_d(4, 32, 14, 10, 5)),
+    # fist with speed lines (PUSH / THROW / SHOOT button)
+    "act": line("M4 22 H13 M2 33 H11 M4 44 H13", 5)
+    + shape(rrect_d(18, 14, 40, 36, 12))
+    + line("M29 16 V30 M39 16 V30 M49 18 V30", 3, INK)
+    + shape(rrect_d(16, 34, 22, 14, 6)),
+    "crown": shape("M8 50 L12 18 L24 32 L32 12 L40 32 L52 18 L56 50 Z", "#ffd23f")
+    + f'<circle cx="32" cy="40" r="4" fill="{INK}"/>',
 }
 
 

@@ -1,10 +1,10 @@
 class_name TouchControls
 extends Control
-## Floating joystick + JUMP / GRAB buttons. Positions come from Game.layout
+## Floating joystick + JUMP / GRAB / ACT buttons. Positions come from Game.layout
 ## (fractions of the screen) and can be dragged around in edit mode.
 ## A touch that misses the buttons drives the joystick if it is closer to the
 ## joystick's home than to any button. Keyboard fallback for PC testing:
-## WASD/arrows, Space, E/Shift.
+## WASD/arrows, Space, E/Shift (grab), F/Q (act).
 
 signal layout_changed
 
@@ -14,13 +14,17 @@ const KNOB_RADIUS := 46.0
 var move := Vector2.ZERO
 var jump_pressed := false
 var grab_held := false
+var act_pressed := false
+## What the ACT button says: PUSH, THROW, SHOOT, BONK, YEET...
+var act_label := "PUSH"
+var act_ammo := 0
 var edit_mode := false
 
 var _joy_index := -1
 var _joy_origin := Vector2.ZERO
 var _joy_pos := Vector2.ZERO
 var _kb := false
-var _btn_touch := {}   # touch index -> "jump"/"grab"
+var _btn_touch := {}   # touch index -> "jump"/"grab"/"act"
 var _drag := {}        # edit mode: touch index -> [item, grab offset]
 
 func _ready() -> void:
@@ -38,6 +42,7 @@ func _items() -> Dictionary:
 	return {
 		"jump": [Game.layout.jump * s, r],
 		"grab": [Game.layout.grab * s, r * 0.8],
+		"act": [Game.layout.act * s, r * 0.8],
 		"joy": [Game.layout.joy * s, JOY_RADIUS],
 	}
 
@@ -50,11 +55,13 @@ func _input(event: InputEvent) -> void:
 	var items := _items()
 	if event is InputEventScreenTouch:
 		if event.pressed:
-			for b in ["jump", "grab"]:
-				if event.position.distance_to(items[b][0]) < items[b][1] * 1.25:
+			for b in ["jump", "grab", "act"]:
+				if event.position.distance_to(items[b][0]) < items[b][1] * 1.2:
 					_btn_touch[event.index] = b
 					if b == "jump":
 						jump_pressed = true
+					elif b == "act":
+						act_pressed = true
 					else:
 						grab_held = true
 					queue_redraw()
@@ -96,7 +103,7 @@ func _edit_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		if event.pressed:
 			var items := _items()
-			for k in ["jump", "grab", "joy"]:
+			for k in ["jump", "grab", "act", "joy"]:
 				if event.position.distance_to(items[k][0]) < items[k][1] * 1.1:
 					_drag[event.index] = [k, items[k][0] - event.position]
 					break
@@ -137,11 +144,24 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			jump_pressed = true
 		if event.physical_keycode in [KEY_E, KEY_SHIFT]:
 			grab_held = event.pressed
+		if event.physical_keycode in [KEY_F, KEY_Q] and event.pressed:
+			act_pressed = true
 
 func consume_jump() -> bool:
 	var j := jump_pressed
 	jump_pressed = false
 	return j
+
+func consume_act() -> bool:
+	var a := act_pressed
+	act_pressed = false
+	return a
+
+func set_act(label: String, ammo: int) -> void:
+	if label != act_label or ammo != act_ammo:
+		act_label = label
+		act_ammo = ammo
+		queue_redraw()
 
 # ---------------------------------------------------------------- drawing
 
@@ -164,9 +184,9 @@ func _draw() -> void:
 	else:
 		draw_circle(knob, KNOB_RADIUS, Color(1, 1, 1, 0.5))
 	# buttons
-	var cols := {"jump": UI.YELLOW, "grab": UI.TEAL}
-	var labels := {"jump": "JUMP", "grab": "GRAB"}
-	for b in ["jump", "grab"]:
+	var cols := {"jump": UI.YELLOW, "grab": UI.TEAL, "act": UI.CORAL if act_label == "PUSH" else UI.GRAPE}
+	var labels := {"jump": "JUMP", "grab": "GRAB", "act": act_label}
+	for b in ["jump", "grab", "act"]:
 		var c: Vector2 = items[b][0]
 		var r: float = items[b][1]
 		var held: bool = b in _btn_touch.values() or (b == "grab" and grab_held)
@@ -177,6 +197,14 @@ func _draw() -> void:
 		var body_c := c + Vector2(0, sink - st.depth * 0.5)
 		var isz := r * 0.72
 		draw_texture_rect(UI.icon(b), Rect2(body_c - Vector2(isz * 0.5, isz * 0.72), Vector2(isz, isz)), false)
+		if b == "act" and act_ammo > 0:
+			var bc := c + Vector2(r * 0.72, -r * 0.72)
+			draw_circle(bc, r * 0.3, UI.INK)
+			draw_circle(bc, r * 0.24, UI.YELLOW)
+			var astr := str(act_ammo)
+			var afs := int(r * 0.32)
+			var aw := font.get_string_size(astr, HORIZONTAL_ALIGNMENT_LEFT, -1, afs).x
+			draw_string(font, bc + Vector2(-aw * 0.5, afs * 0.36), astr, HORIZONTAL_ALIGNMENT_LEFT, -1, afs, UI.INK)
 		var fs := int(r * 0.3)
 		var tw := font.get_string_size(labels[b], HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 		var tp := body_c + Vector2(-tw * 0.5, isz * 0.28 + fs * 0.75)

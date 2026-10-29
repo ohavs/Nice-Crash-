@@ -1,237 +1,267 @@
 class_name Scenery
 extends Node3D
-## Sky, sun and the distant backdrop: mountain ring, floating islands with
-## trees, a sea of clouds below and drifting hot-air balloons. Purely visual
-## (no collision). Shared by the menu and the game.
-
-const M := "res://assets/kenney/models/%s.glb"
+## The world around a course, built only from real models (Kenney nature,
+## food, furniture, pirate and town kits) under Kenney's painted skybox.
+## Themes:
+##   meadow  - river valley: grassy cliffs, forests, tents, market stalls, sailing ships
+##   kitchen - a giant kitchen: cabinets, stove, fridge, huge food, a sea of tomato soup
+##   pirate  - tropical sea: rock islands with palms, ships, towers, floating barrels
+## Purely visual (no collision). Shared by the menu and the game. Static
+## copies are batched into MultiMeshes so the whole backdrop is a few dozen
+## draw calls.
 
 ## Course runs from z = 0 to z = -length; the backdrop surrounds that span.
 var length := 100.0
+var theme := "meadow"
 var shadows := true
-## Keep islands/balloons at least this far to the side of the course.
-var clearance := 30.0
+## Keep land at least this far to the side of the course centre line.
+var clearance := 26.0
+## World height of the water / soup surface.
+var sea_level := -17.0
 
-var _drifters: Array = []   # [node, base_position, amplitude, speed, phase]
+var _batches := {}        # model id -> Array[Transform3D]
+var _drifters: Array = [] # [node, base_position, bob, speed, phase, drift]
 var _t := 0.0
 var _rng := RandomNumberGenerator.new()
 
 func _ready() -> void:
-	_rng.seed = 7
+	_rng.seed = hash(theme) + 7
 	_environment()
-	_mountains()
-	_islands()
-	_cloud_sea()
-	_balloons()
-	for gi in find_children("*", "GeometryInstance3D", true, false):
-		gi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	match theme:
+		"kitchen":
+			_kitchen()
+		"pirate":
+			_pirate()
+		_:
+			_meadow()
+	_clouds()
+	for id in _batches:
+		add_child(Props.multi(id, _batches[id]))
+
+# ------------------------------------------------------------- environment
 
 func _environment() -> void:
 	var we := WorldEnvironment.new()
 	var env := Environment.new()
 	var sky := Sky.new()
-	var sm := ProceduralSkyMaterial.new()
-	sm.sky_top_color = Color("2a86f5")
-	sm.sky_horizon_color = Color("bfe7ff")
-	sm.sky_curve = 0.12
-	sm.ground_horizon_color = Color("bfe7ff")
-	sm.ground_bottom_color = Color("8fd0ff")
-	sm.sun_angle_max = 12.0
-	sm.sun_curve = 0.08
-	sky.sky_material = sm
+	var pm := PanoramaSkyMaterial.new()
+	pm.panorama = load("res://assets/kenney/sky/skybox.png")
+	sky.sky_material = pm
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = 0.9
+	env.sky_rotation.y = 0.6
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color("d4ddff")
+	env.ambient_light_energy = 0.45
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	env.tonemap_exposure = 0.92
 	env.glow_enabled = true
-	env.glow_intensity = 0.35
-	env.glow_bloom = 0.04
+	env.glow_intensity = 0.25
+	env.glow_bloom = 0.0
 	env.fog_enabled = true
-	env.fog_light_color = Color("cbeaff")
-	env.fog_density = 0.0035
+	env.fog_light_color = Color("b9b2ff") if theme != "kitchen" else Color("ffe3c4")
+	env.fog_density = 0.0016
 	env.fog_sky_affect = 0.0
-	env.fog_aerial_perspective = 0.4
+	env.fog_aerial_perspective = 0.12
 	env.adjustment_enabled = true
-	env.adjustment_saturation = 1.2
+	env.adjustment_saturation = 1.1
+	env.adjustment_contrast = 1.05
 	we.environment = env
 	add_child(we)
 	var sun := DirectionalLight3D.new()
-	sun.rotation_degrees = Vector3(-50, -35, 0)
-	sun.light_energy = 1.2
-	sun.light_color = Color("fff4e0")
+	sun.rotation_degrees = Vector3(-52, -35, 0)
+	sun.light_energy = 1.0
+	sun.light_color = Color("fff1dc")
 	sun.shadow_enabled = shadows
 	sun.directional_shadow_max_distance = 40.0
 	add_child(sun)
 
-func _span_point(spread: float) -> Vector3:
-	return Vector3(0, 0, _rng.randf_range(-length - spread, spread))
-
-# ------------------------------------------------------------- pieces
-
-func _mountains() -> void:
-	var mid := Vector3(0, 0, -length * 0.5)
-	var n := 22
-	for i in n:
-		var a := i * TAU / n + _rng.randf_range(-0.08, 0.08)
-		var d := length * 0.5 + _rng.randf_range(150.0, 190.0)
-		var h := _rng.randf_range(35.0, 65.0)
-		var r := h * _rng.randf_range(0.55, 0.8)
-		var pos := mid + Vector3(cos(a) * d, -30.0, sin(a) * d)
-		var col := Color("8f9fe8").lerp(Color("b49cf0"), _rng.randf())
-		var body := _cone(r, h, col, 7)
-		body.position = pos + Vector3(0, h * 0.5, 0)
-		body.rotation.y = _rng.randf() * TAU
-		add_child(body)
-		var cap := _cone(r * 0.3, h * 0.3, Color("f4f6ff"), 7)
-		cap.position = Vector3(0, h * 0.35 + 0.2, 0)
-		body.add_child(cap)
-
-func _islands() -> void:
-	for i in 14:
-		var side := -1.0 if i % 2 == 0 else 1.0
-		var p := _span_point(40.0) + Vector3(side * _rng.randf_range(clearance, clearance + 45.0), _rng.randf_range(-8.0, 9.0), 0)
-		_island(p, _rng.randf_range(2.2, 4.5))
-	# a couple far ahead, framing the horizon
-	for i in 3:
-		var x := (-1.0 if i % 2 else 1.0) * _rng.randf_range(20.0, 55.0)
-		_island(Vector3(x, _rng.randf_range(-6, 4), -length - _rng.randf_range(95, 140)), _rng.randf_range(3.5, 5.0))
-
-func _island(pos: Vector3, s: float) -> void:
-	var root := Node3D.new()
-	root.position = pos
-	add_child(root)
-	var top := (load(M % "platform-grass-large-round") as PackedScene).instantiate()
-	top.scale = Vector3.ONE * s
-	root.add_child(top)
-	var box := aabb(top)
-	var radius := maxf(box.size.x, box.size.z) * 0.5 * s
-	var top_y := box.end.y * s
-	# rocky underside: two stacked inverted cones
-	var rock := _cone(radius * 0.95, radius * 1.5, Color("b08a6a"), 8, true)
-	rock.position.y = box.position.y * s - radius * 0.75
-	root.add_child(rock)
-	var rock2 := _cone(radius * 0.45, radius * 0.9, Color("8c6a55"), 7, true)
-	rock2.position = Vector3(radius * 0.25, rock.position.y - radius * 0.9, -radius * 0.1)
-	root.add_child(rock2)
-	for t in _rng.randi_range(1, 3):
-		var a := _rng.randf() * TAU
-		var d := _rng.randf_range(0.0, radius * 0.55)
-		var tree := _tree(_rng.randf_range(0.8, 1.3) * s * 0.55)
-		tree.position = Vector3(cos(a) * d, top_y, sin(a) * d)
-		root.add_child(tree)
-	_drifters.append([root, pos, _rng.randf_range(0.4, 1.0), _rng.randf_range(0.3, 0.5), _rng.randf() * TAU])
-
-func _tree(s: float) -> Node3D:
-	var t := Node3D.new()
-	var trunk := MeshInstance3D.new()
-	var cm := CylinderMesh.new()
-	cm.top_radius = 0.18 * s
-	cm.bottom_radius = 0.26 * s
-	cm.height = 1.4 * s
-	cm.radial_segments = 8
-	trunk.mesh = cm
-	trunk.material_override = Toon.mat(Color("9a6238"))
-	trunk.position.y = 0.7 * s
-	t.add_child(trunk)
-	var greens := [Color("5ccf6a"), Color("7be07a"), Color("49b862")]
-	var g: Color = greens[_rng.randi() % greens.size()]
-	for k in 3:
-		var leaf := MeshInstance3D.new()
-		var sm := SphereMesh.new()
-		var r := (0.85 - k * 0.2) * s
-		sm.radius = r
-		sm.height = r * 1.8
-		sm.radial_segments = 12
-		sm.rings = 6
-		leaf.mesh = sm
-		leaf.material_override = Toon.mat(g.lightened(k * 0.08))
-		leaf.position = Vector3(_rng.randf_range(-0.15, 0.15) * s, (1.6 + k * 0.55) * s, 0)
-		t.add_child(leaf)
-	return t
-
-func _cloud_sea() -> void:
-	var cloud := load(M % "cloud") as PackedScene
-	for i in 46:
-		var c := cloud.instantiate()
-		var p := _span_point(70.0)
-		p.x = _rng.randf_range(-110.0, 110.0)
-		p.y = _rng.randf_range(-25.0, -19.0)
-		c.position = p
-		var cs := _rng.randf_range(7.0, 13.0)
-		c.scale = Vector3(cs, cs * 0.45, cs)
-		c.rotation.y = _rng.randf() * TAU
-		add_child(c)
-		_drifters.append([c, p, 0.0, 0.0, 0.0])
-	# soft floor under the clouds so the horizon never shows a gap
-	var base := MeshInstance3D.new()
-	var pm := PlaneMesh.new()
-	pm.size = Vector2(900, 900)
-	base.mesh = pm
-	base.material_override = Toon.mat(Color("dff1ff"), false)
-	base.position = Vector3(0, -23.0, -length * 0.5)
-	add_child(base)
-
-func _balloons() -> void:
-	var cols := [UI.CORAL, UI.YELLOW, UI.TEAL, UI.GRAPE]
-	for i in 5:
-		var b := Node3D.new()
-		var side := -1.0 if i % 2 else 1.0
-		var p := _span_point(20.0) + Vector3(side * _rng.randf_range(clearance * 0.6, clearance * 1.3), _rng.randf_range(6.0, 16.0), 0)
-		b.position = p
-		add_child(b)
-		var env := MeshInstance3D.new()
-		var sm := SphereMesh.new()
-		sm.radius = 2.0
-		sm.height = 4.6
-		sm.radial_segments = 10
-		sm.rings = 8
-		env.mesh = sm
-		env.material_override = Toon.mat(cols[i % cols.size()])
-		b.add_child(env)
-		var band := MeshInstance3D.new()
-		var tm := CylinderMesh.new()
-		tm.top_radius = 2.03
-		tm.bottom_radius = 2.03
-		tm.height = 0.7
-		tm.radial_segments = 10
-		band.mesh = tm
-		band.material_override = Toon.mat(UI.WHITE)
-		band.position.y = 0.1
-		b.add_child(band)
-		var basket := MeshInstance3D.new()
-		var bm := BoxMesh.new()
-		bm.size = Vector3(0.9, 0.7, 0.9)
-		basket.mesh = bm
-		basket.material_override = Toon.mat(Color("9a6238"))
-		basket.position.y = -3.4
-		b.add_child(basket)
-		for k in 4:
-			var rope := MeshInstance3D.new()
-			var rm := CylinderMesh.new()
-			rm.top_radius = 0.03
-			rm.bottom_radius = 0.03
-			rm.height = 1.5
-			rope.mesh = rm
-			rope.material_override = Toon.mat(UI.INK, false)
-			var o := Vector3(0.4 if k % 2 else -0.4, 0, 0.4 if k < 2 else -0.4)
-			rope.position = o + Vector3(0, -2.4, 0)
-			b.add_child(rope)
-		_drifters.append([b, p, 1.2, _rng.randf_range(0.5, 0.8), _rng.randf() * TAU])
-
-# ------------------------------------------------------------- helpers
-
-func _cone(r: float, h: float, col: Color, segments: int, inverted := false) -> MeshInstance3D:
+func _sea(deep: Color, shallow: Color, foam: Color) -> void:
 	var mi := MeshInstance3D.new()
-	var cm := CylinderMesh.new()
-	cm.top_radius = r if inverted else 0.0
-	cm.bottom_radius = 0.0 if inverted else r
-	cm.height = h
-	cm.radial_segments = segments
-	cm.rings = 1
-	mi.mesh = cm
-	mi.material_override = Toon.mat(col, false)
-	return mi
+	var pm := PlaneMesh.new()
+	pm.size = Vector2(1400, 1400)
+	pm.subdivide_width = 60
+	pm.subdivide_depth = 60
+	mi.mesh = pm
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://assets/shaders/water.gdshader")
+	mat.set_shader_parameter("deep", deep)
+	mat.set_shader_parameter("shallow", shallow)
+	mat.set_shader_parameter("foam", foam)
+	mi.material_override = mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.position = Vector3(0, sea_level, -length * 0.5)
+	add_child(mi)
+
+# ------------------------------------------------------------- placement
+
+func _put(id: String, pos: Vector3, s: float, yaw := -1.0, s_y := -1.0) -> void:
+	var b := Basis(Vector3.UP, _rng.randf() * TAU if yaw < 0.0 else yaw).scaled(Vector3(s, s if s_y < 0.0 else s_y, s))
+	if not _batches.has(id):
+		_batches[id] = []
+	_batches[id].append(Transform3D(b, pos))
+
+## Scale factor that makes model `id` `size` metres across.
+func _fit(id: String, size: float) -> float:
+	var s := Props.base_size(id)
+	return size / maxf(maxf(s.x, s.z), 0.001)
+
+func _pick(arr: Array):
+	return arr[_rng.randi() % arr.size()]
+
+## z positions covering the course plus margins before and after.
+func _span(step: float, before := 60.0, after := 140.0) -> Array:
+	var out := []
+	var z := before
+	while z > -length - after:
+		out.append(z)
+		z -= step
+	return out
+
+# ------------------------------------------------------------- meadow
+
+func _meadow() -> void:
+	_sea(Color("1670b8"), Color("2fa9dc"), Color("e8fbff"))
+	var trees := ["nature/tree_oak", "nature/tree_default", "nature/tree_detailed", "nature/tree_fat",
+		"nature/tree_pineRoundA", "nature/tree_pineRoundC", "nature/tree_pineTallA", "nature/tree_plateau", "town/treeHighRound"]
+	var small := ["nature/plant_bushLarge", "nature/plant_bush", "nature/flower_redA", "nature/flower_yellowA",
+		"nature/flower_purpleA", "nature/mushroom_redGroup", "nature/grass_large", "nature/rock_largeA", "nature/stump_round"]
+	var block := 12.0
+	for side in [-1.0, 1.0]:
+		for z in _span(block):
+			for col in 4:
+				var x: float = side * (clearance + col * block + _rng.randf_range(-2.0, 2.0))
+				# terraces rise away from the course
+				var top := sea_level + 4.0 + col * 3.5 + _rng.randf_range(0.0, 4.0)
+				var h := top - (sea_level - 4.0)
+				var pos := Vector3(x, sea_level - 4.0, z)
+				_put("nature/cliff_block_rock", pos, block * 1.02, PI * 0.5 * _rng.randi_range(0, 3), h)
+				var ground := Vector3(x, top, z)
+				# a few things on top of every block
+				var r := _rng.randf()
+				if r < 0.07 and col > 0:
+					_put("nature/tent_detailedOpen", ground + _jitter(3.0), _fit("nature/tent_detailedOpen", 6.0))
+					_put("nature/campfire_logs", ground + _jitter(3.0) + Vector3(0, 0, 3), _fit("nature/campfire_logs", 2.0))
+				elif r < 0.12 and col > 0:
+					_put("town/stallRed", ground + _jitter(3.0), _fit("town/stallRed", 5.0))
+				for k in _rng.randi_range(1, 3):
+					var id: String = _pick(trees)
+					_put(id, ground + _jitter(4.5), _fit(id, _rng.randf_range(4.0, 7.0)))
+				for k in _rng.randi_range(1, 3):
+					var id: String = _pick(small)
+					_put(id, ground + _jitter(5.0), _fit(id, _rng.randf_range(1.5, 3.0)))
+				if col == 0 and _rng.randf() < 0.35:
+					_put("nature/fence_simple", ground + Vector3(-side * block * 0.42, 0, _rng.randf_range(-3, 3)), _fit("nature/fence_simple", 4.0), PI * 0.5)
+	# hills closing the valley far ahead
+	for i in 9:
+		var x := (i - 4) * 22.0 + _rng.randf_range(-5, 5)
+		var z := -length - _rng.randf_range(150.0, 190.0)
+		_put("nature/rock_tallE", Vector3(x, sea_level - 2.0, z), _fit("nature/rock_tallE", _rng.randf_range(26.0, 40.0)))
+		_put("nature/tree_pineTallA", Vector3(x + _rng.randf_range(-12, 12), sea_level + 2.0, z + 22.0), _fit("nature/tree_pineTallA", 9.0))
+	_ships(["pirate/ship_light", "pirate/ship_dark"], 3)
+
+func _jitter(r: float) -> Vector3:
+	return Vector3(_rng.randf_range(-r, r), 0, _rng.randf_range(-r, r))
+
+# ------------------------------------------------------------- kitchen
+
+func _kitchen() -> void:
+	sea_level = -15.0
+	_sea(Color("b8301a"), Color("e0582c"), Color("ffc58a"))  # tomato soup
+	var counter := ["furniture/kitchenCabinet", "furniture/kitchenCabinet", "furniture/kitchenStove", "furniture/kitchenSink"]
+	var w := 16.0
+	var giant := ["food/tomato", "food/watermelon", "food/cheese", "food/bottleKetchup", "food/sodaCan",
+		"food/loaf", "food/pie", "food/burger", "food/cupcake", "food/croissant", "food/broccoli", "food/carrot"]
+	for side in [-1.0, 1.0]:
+		var yaw := PI * 0.5 if side < 0 else -PI * 0.5
+		for z in _span(w, 40.0, 100.0):
+			var id: String = _pick(counter)
+			var s := _fit(id, w)
+			var base := Vector3(side * (clearance + w * 0.5), sea_level - 2.0, z)
+			_put(id, base, s, yaw)
+			var top := sea_level - 2.0 + Props.base_size(id).y * s
+			if _rng.randf() < 0.6:
+				var g: String = _pick(giant)
+				_put(g, Vector3(side * (clearance + w * 0.4), top, z) + _jitter(3.0), _fit(g, _rng.randf_range(5.0, 9.0)))
+		# appliances standing on the counters
+		for k in 3:
+			var app: String = _pick(["furniture/kitchenMicrowave", "furniture/kitchenCoffeeMachine", "furniture/kitchenBlender", "furniture/toaster"])
+			var z := -length * (k + 0.5) / 3.0 + _rng.randf_range(-6, 6)
+			_put(app, Vector3(side * (clearance + w * 0.45), sea_level - 2.0 + Props.base_size("furniture/kitchenCabinet").y * _fit("furniture/kitchenCabinet", w), z), _fit(app, 11.0), yaw)
+	# the fridge and stove wall at the end
+	for i in 5:
+		var id: String = ["furniture/kitchenFridgeLarge", "furniture/kitchenStove", "furniture/kitchenFridgeLarge", "furniture/kitchenSink", "furniture/kitchenFridgeLarge"][i]
+		_put(id, Vector3((i - 2) * 24.0, sea_level - 2.0, -length - 120.0), _fit(id, 24.0), 0.0)
+	# bits of food floating in the soup
+	for i in 30:
+		var id: String = _pick(["food/tomato", "food/carrot", "food/broccoli", "food/croissant", "food/cookie"])
+		var p := Vector3(_rng.randf_range(-clearance + 4, clearance - 4), sea_level - 0.4, _rng.randf_range(-length - 60, 40))
+		if absf(p.x) < 8.0:
+			p.x += signf(p.x + 0.01) * 8.0
+		var n := Props.sized(id, _rng.randf_range(2.0, 4.0))
+		n.position = p
+		n.rotation.y = _rng.randf() * TAU
+		Props.no_shadows(n)
+		add_child(n)
+		_drifters.append([n, p, 0.25, _rng.randf_range(0.6, 1.0), _rng.randf() * TAU, 0.6])
+
+# ------------------------------------------------------------- pirate
+
+func _pirate() -> void:
+	sea_level = -16.0
+	_sea(Color("0b62a8"), Color("1fb4cc"), Color("f0ffff"))
+	for z in _span(26.0, 60.0, 160.0):
+		for side in [-1.0, 1.0]:
+			var x: float = side * _rng.randf_range(clearance + 2.0, clearance + 70.0)
+			var pos := Vector3(x, sea_level - 3.0, z + _rng.randf_range(-8, 8))
+			var size := _rng.randf_range(14.0, 26.0)
+			_put("pirate/formationLarge_rock", pos, _fit("pirate/formationLarge_rock", size))
+			var top := sea_level - 3.0 + Props.base_size("pirate/formationLarge_rock").y * _fit("pirate/formationLarge_rock", size) * 0.35
+			for k in _rng.randi_range(1, 3):
+				_put("pirate/palm_detailed_long", Vector3(x, top, pos.z) + _jitter(size * 0.3), _fit("pirate/palm_detailed_long", _rng.randf_range(6.0, 9.0)))
+			if _rng.randf() < 0.18:
+				_put("pirate/tower", Vector3(x + side * 6.0, sea_level - 1.0, pos.z + 10.0), _fit("pirate/tower", 12.0))
+	_ships(["pirate/ship_dark", "pirate/ship_light"], 6)
+	for i in 14:
+		var id: String = _pick(["platformer/barrel", "pirate/chest", "platformer/crate"])
+		var p := Vector3(_rng.randf_range(-clearance, clearance), sea_level - 0.5, _rng.randf_range(-length - 60, 40))
+		if absf(p.x) < 9.0:
+			p.x += signf(p.x + 0.01) * 9.0
+		var n := Props.sized(id, _rng.randf_range(1.6, 2.6))
+		n.position = p
+		Props.no_shadows(n)
+		add_child(n)
+		_drifters.append([n, p, 0.3, _rng.randf_range(0.7, 1.1), _rng.randf() * TAU, 0.4])
+
+# ------------------------------------------------------------- shared
+
+func _ships(ids: Array, n: int) -> void:
+	for i in n:
+		var side := -1.0 if i % 2 else 1.0
+		var id: String = ids[i % ids.size()]
+		var ship := Props.sized(id, _rng.randf_range(16.0, 22.0), 2)
+		var p := Vector3(side * _rng.randf_range(clearance + 18.0, clearance + 60.0), sea_level - 1.2, _rng.randf_range(-length - 80.0, 30.0))
+		if theme == "meadow":
+			p.x = side * _rng.randf_range(10.0, clearance - 8.0)  # sailing up the river
+		ship.position = p
+		ship.rotation.y = _rng.randf_range(-0.3, 0.3) + (PI if _rng.randf() < 0.5 else 0.0)
+		Props.no_shadows(ship)
+		add_child(ship)
+		_drifters.append([ship, p, 0.35, 0.7, _rng.randf() * TAU, 1.5])
+
+func _clouds() -> void:
+	var cloud := "models/cloud"
+	for i in 26:
+		var c := Props.make(cloud)
+		var side := -1.0 if i % 2 else 1.0
+		var p := Vector3(side * _rng.randf_range(12.0, 90.0), _rng.randf_range(6.0, 26.0), _rng.randf_range(-length - 120.0, 40.0))
+		c.position = p
+		var cs := _rng.randf_range(4.0, 9.0)
+		c.scale = Vector3(cs, cs * 0.6, cs)
+		c.rotation.y = _rng.randf() * TAU
+		Props.no_shadows(c)
+		add_child(c)
+		_drifters.append([c, p, 0.0, 0.0, 0.0, 3.0])
 
 static func aabb(n: Node3D) -> AABB:
 	var box := AABB()
@@ -247,7 +277,7 @@ func _process(delta: float) -> void:
 	for d in _drifters:
 		var n: Node3D = d[0]
 		var base: Vector3 = d[1]
+		n.position.y = base.y + sin(_t * d[3] + d[4]) * d[2]
+		n.position.x = base.x + sin(_t * 0.05 + base.z) * d[5]
 		if d[2] > 0.0:
-			n.position.y = base.y + sin(_t * d[3] + d[4]) * d[2]
-		else:
-			n.position.x = base.x + sin(_t * 0.05 + base.z) * 4.0  # clouds drift
+			n.rotation.z = sin(_t * d[3] * 0.8 + d[4]) * 0.04

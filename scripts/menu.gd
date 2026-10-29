@@ -48,30 +48,32 @@ func _build_world() -> void:
 	sv.add_child(world)
 	var scenery := Scenery.new()
 	scenery.length = 0.0
-	scenery.clearance = 60.0
+	scenery.clearance = 20.0
 	world.add_child(scenery)
 
-	# the hero island
-	var island := (load("res://assets/kenney/models/platform-grass-large-round.glb") as PackedScene).instantiate()
+	# the hero island: a grassy platform on a rock pillar, with flowers,
+	# a tree and the toaster everyone pops out of
+	var island := Props.make("models/platform-grass-large-round")
 	island.scale = Vector3.ONE * 0.9
 	world.add_child(island)
-	var box := Scenery.aabb(island)
-	_stand_y = box.end.y * 0.9
-	var r := box.size.x * 0.45
-	var rock := MeshInstance3D.new()
-	var cm := CylinderMesh.new()
-	cm.top_radius = r
-	cm.bottom_radius = 0.0
-	cm.height = r * 1.6
-	cm.radial_segments = 8
-	rock.mesh = cm
-	rock.material_override = Toon.mat(Color("b08a6a"))
-	rock.position.y = box.position.y * 0.9 - r * 0.8
+	_stand_y = Props.base_size("models/platform-grass-large-round").y * 0.9
+	var r := 2.5 * 0.9
+	var rock := Props.sized("nature/rock_tallE", r * 2.0)
+	rock.rotation.x = PI
+	rock.position.y = 0.05
 	world.add_child(rock)
-	for i in 5:
-		var g := (load("res://assets/kenney/models/%s.glb" % ("grass" if i % 2 else "grass-small")) as PackedScene).instantiate()
-		var a := PI * 0.15 + i * PI * 0.32
-		g.position = Vector3(cos(a) * r * 0.75, _stand_y - 0.05, -abs(sin(a)) * r * 0.6)
+	var tree := Props.sized("nature/tree_oak", 1.6)
+	tree.position = Vector3(-r * 0.62, _stand_y, -r * 0.45)
+	world.add_child(tree)
+	var toaster := Props.sized("furniture/toaster", 1.1)
+	toaster.position = Vector3(r * 0.6, _stand_y, -r * 0.35)
+	toaster.rotation.y = -0.5
+	world.add_child(toaster)
+	for i in 6:
+		var id: String = ["nature/flower_redA", "nature/grass_large", "nature/flower_yellowA", "nature/plant_bush", "nature/flower_purpleA", "nature/grass_large"][i]
+		var g := Props.sized(id, 0.45)
+		var a := PI * 0.12 + i * PI * 0.16
+		g.position = Vector3(cos(a) * r * 0.78, _stand_y - 0.02, -absf(sin(a)) * r * 0.55 + 0.2)
 		world.add_child(g)
 
 	_preview_root = Node3D.new()
@@ -177,7 +179,7 @@ func _build_bottom() -> void:
 	row.add_child(UI.round_button("right", UI.WHITE, 92, func(): _change_skin(1)))
 	vb.add_child(row)
 
-	var play := UI.button("PLAY", UI.YELLOW, 76, _play, "play", Vector2(0, 150))
+	var play := UI.button("PLAY", UI.YELLOW, 76, _open_courses, "play", Vector2(0, 150))
 	play.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	vb.add_child(play)
 
@@ -187,10 +189,33 @@ func _build_bottom() -> void:
 	vb.add_child(ver)
 	_update_skin_label()
 
-func _play() -> void:
+func _play(course: String) -> void:
 	Game.skin = _skin_keys[_skin_i]
+	Game.course = course
 	Game.save_settings()
 	get_tree().change_scene_to_file("res://scenes/main.tscn")
+
+var _courses: Control
+
+func _open_courses() -> void:
+	if _courses:
+		return
+	var m := UI.modal("PICK A ROUND", UI.YELLOW)
+	_courses = m[0]
+	var vb: VBoxContainer = m[1]
+	for id in Level.COURSES:
+		var c: Dictionary = Level.COURSES[id]
+		var b := UI.button(c.name, c.color, 34, _play.bind(id), "crown" if c.mode == "survival" else "play")
+		b.custom_minimum_size.x = 470
+		vb.add_child(b)
+		var blurb := UI.ink_text(c.blurb, 20)
+		blurb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		vb.add_child(blurb)
+	vb.add_child(UI.button("BACK", UI.CORAL, 30, func():
+		_courses.queue_free()
+		_courses = null, "close"))
+	add_child(_courses)
+	UI.pop_in(_courses.get_meta("card"))
 
 func _change_skin(d: int) -> void:
 	_skin_i = wrapi(_skin_i + d, 0, _skin_keys.size())
