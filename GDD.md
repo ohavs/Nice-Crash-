@@ -1,0 +1,25 @@
+# Nice Crash! — GDD (short)
+
+**Pitch:** Wobbly food-object characters (egg, toast, marshmallow) run obstacle courses. Crashing is the fun: slow-mo, "NICE CRASH! +score", shareable fails.
+
+## Core
+- Engine: Godot 4.6, Jolt physics, Mobile renderer, landscape. Android first; Google Play Games on PC later.
+- View: top-back follow camera. Controls: floating joystick (left), JUMP + GRAB (right).
+- Character: RigidBody kept upright by a PD controller; hard impact (dv > threshold) or hazard hit → **crash** (full ragdoll, floppy limbs on pin joints) → auto-recover.
+- GRAB: pin joint to whatever is in front (ledges, crates, later other players).
+
+## MVP (now)
+- 3 skins, 1 course (spinner, gaps, hammers, falling platforms, bounce pad, pushers, crates), checkpoints, finish.
+- Crash juice: slow-mo, shake, vibration, popup score. Time + crash count.
+- Menu: character pick with 3D preview, settings → check for updates (GitHub Releases).
+
+## Next
+1. More courses + course select, coins.
+2. Monetization: rewarded ad (continue / double coins), skin shop, remove ads.
+3. Clip saving of best crash (share to TikTok).
+4. Async "ghost" races with friends via party code (Firebase). Real-time later.
+5. Funny weapons (plunger, fish cannon), vehicles.
+
+## Art rules
+- One source per layer: Kenney (world/UI/sound, CC0). Quaternius may be added later for characters.
+- Toon materials + black outline on everything (`scripts/toon.gd`).
