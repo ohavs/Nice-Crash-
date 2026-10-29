@@ -29,6 +29,7 @@ const VEGGIES := {
 	"broccoli": {"model": "food/broccoli", "name": "Brocc", "height": 1.4},
 	"eggplant": {"model": "food/eggplant", "name": "Aubergine", "height": 1.45},
 	"carrot": {"model": "food/carrot", "name": "Carrot", "height": 1.6},
+	"snowman": {"model": "holiday/snowman", "name": "Frosty", "height": 1.7, "noface": true},
 }
 const ITEMS := {
 	"tomato": {"model": "food/tomato", "ammo": 3, "label": "THROW"},
@@ -47,6 +48,10 @@ var is_human := false
 var is_enemy := false
 ## false in survival rounds: falling off means you're out.
 var respawn_enabled := true
+## Same team (>= 0) = friends: bots won't pick on each other. -1 = everyone.
+var team := -1
+## Below this height you've fallen off the level.
+var kill_y := -15.0
 
 var input_dir := Vector3.ZERO          # world-space, set by the controller each frame
 var jump_requested := false
@@ -56,6 +61,7 @@ var action_requested := false
 var is_crashed := false
 var crash_timer := 0.0
 var checkpoint := Vector3.ZERO
+var checkpoint_i := 0
 var finished := false
 var is_out := false
 var item := ""
@@ -66,6 +72,7 @@ var crash_count := 0
 var _prev_vel := Vector3.ZERO
 var _ignore_dv := 0
 var _grounded := false
+var _ground: Object
 var _coyote := 0.0
 var _air_time := 0.0
 var _tilt_timer := 0.0
@@ -130,6 +137,7 @@ func _build_visual() -> void:
 		display_name = data.name
 	var id: String = data.model
 	_body_model = Props.make(id)
+	Props.smooth(_body_model)
 	var size := Props.base_size(id)
 	var stand: bool = data.get("stand", false)
 	var turn: bool = data.get("turn", false)  # crust is on the model's -x side: roll it to the top
@@ -155,7 +163,8 @@ func _build_visual() -> void:
 		Props.tint(_body_model, Color.WHITE, 0.0)  # own materials so toasting/cracks stay per player
 	var depth: float = (size.y * s * data.get("thick", 1.0)) if stand else size.z * s
 	var width: float = (size.z if turn else size.x) * s
-	_add_face(depth * 0.5, width, data.height)
+	if not data.get("noface", false):
+		_add_face(depth * 0.5, width, data.height)
 
 func _add_face(front: float, width: float, height: float) -> void:
 	var eye_r := clampf(width * 0.13, 0.09, 0.14)
@@ -167,6 +176,7 @@ func _add_face(front: float, width: float, height: float) -> void:
 		ws.height = eye_r * 2.0
 		white.mesh = ws
 		white.material_override = Toon.mat(Color.WHITE)
+		white.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		white.position = Vector3(eye_r * 1.25 * side, eye_y, -front - eye_r * 0.35)
 		visual.add_child(white)
 		var pupil := MeshInstance3D.new()
@@ -175,6 +185,7 @@ func _add_face(front: float, width: float, height: float) -> void:
 		ps.height = eye_r * 0.92
 		pupil.mesh = ps
 		pupil.material_override = Toon.unshaded(Color(0.05, 0.05, 0.08))
+		pupil.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		pupil.position = Vector3(0.0, 0.0, -eye_r * 0.7)
 		white.add_child(pupil)
 	var mouth := MeshInstance3D.new()
@@ -184,6 +195,7 @@ func _add_face(front: float, width: float, height: float) -> void:
 	mouth.mesh = mm
 	mouth.scale = Vector3(1.8, 0.6, 0.6)
 	mouth.material_override = Toon.unshaded(Color("5a1f2b"))
+	mouth.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	mouth.position = Vector3(0, eye_y - eye_r * 1.6, -front - 0.02)
 	visual.add_child(mouth)
 
@@ -283,7 +295,7 @@ func _physics_process(delta: float) -> void:
 		_control(delta)
 	action_requested = false
 
-	if global_position.y < -15.0:
+	if global_position.y < kill_y:
 		fell_off()
 
 	_update_grab()
@@ -314,15 +326,17 @@ func _control(delta: float) -> void:
 	else:
 		_tilt_timer = 0.0
 
-	# horizontal movement
-	var target := flat_in.limit_length(1.0) * move_speed
+	# horizontal movement (relative to whatever we stand on: rafts, pizzas)
+	var target := flat_in.limit_length(1.0) * move_speed + ground_velocity()
 	var hv := Vector3(linear_velocity.x, 0, linear_velocity.z)
 	var accel := 14.0 if _grounded else 5.0
+	if on_ice():
+		accel = 2.2
 	apply_central_force((target - hv) * accel * mass)
 
 	if jump_requested and _coyote > 0.0:
 		_ignore_dv = 2
-		linear_velocity.y = jump_speed
+		linear_velocity.y = maxf(linear_velocity.y, jump_speed)
 		_coyote = 0.0
 		Game.play("jump", 0.12, -6.0 if is_human else -14.0)
 		_squash(Vector3(0.8, 1.3, 0.8))
@@ -336,10 +350,33 @@ func _check_ground() -> bool:
 	var from := global_position
 	var q := PhysicsRayQueryParameters3D.create(from, from + Vector3.DOWN * 1.05, 1 | 2)
 	q.exclude = [get_rid()]
-	return not space.intersect_ray(q).is_empty()
+	var r := space.intersect_ray(q)
+	_ground = r.get("collider")
+	return not r.is_empty()
 
 func is_grounded() -> bool:
 	return _grounded
+
+## What we're standing on (null in the air).
+func ground_body() -> Object:
+	if not _grounded or _ground == null or not is_instance_valid(_ground):
+		return null
+	return _ground
+
+func on_ice() -> bool:
+	var g := ground_body()
+	return g != null and g.has_meta("ice")
+
+## Horizontal velocity of the moving thing we stand on.
+func ground_velocity() -> Vector3:
+	var g := ground_body()
+	if not g is AnimatableBody3D:
+		return Vector3.ZERO
+	var lin: Vector3 = g.get_meta("hazard_vel", Vector3.ZERO)
+	var ang: Vector3 = g.get_meta("hazard_ang", Vector3.ZERO)
+	var v := lin + ang.cross(global_position - (g as Node3D).global_position)
+	v.y = 0
+	return v.limit_length(12.0)
 
 func forward() -> Vector3:
 	var f := -global_basis.z
@@ -357,6 +394,16 @@ func _on_body_entered(b: Node) -> void:
 	var lin: Vector3 = b.get_meta("hazard_vel", Vector3.ZERO)
 	var ang: Vector3 = b.get_meta("hazard_ang", Vector3.ZERO)
 	var v := lin + ang.cross(global_position - b.global_position)
+	if b.get_meta("train", false) and v.length() > 2.0:
+		hit(Vector3(v.x, 0, v.z).normalized() * 11.0 + Vector3.UP * 7.0)
+		Game.play("clang", 0.1, 0.0 if is_human else -10.0)
+		return
+	if b.get_meta("sweep", false):
+		# party sweeper pins: a knock you can recover from, not a launch
+		v.y = 0
+		if v.length() > 1.0:
+			hit(v.normalized() * 3.2 + Vector3.UP * 3.0)
+		return
 	if b.get_meta("slam", false) and v.y < -3.0:
 		# cleaver coming down: squashed and flung sideways
 		hit(Vector3(1.0 if randf() < 0.5 else -1.0, 0, 0) * 5.0 + Vector3.UP * 4.0)
@@ -381,6 +428,16 @@ func crash(power: float) -> void:
 		_last_hit_by.bonked.emit(self, "BONK")
 	_skin_crash(power)
 	crashed.emit(power)
+
+## Fling us (bounce pads, toasters, mushrooms) without it counting as a
+## crash or getting cancelled by a jump in the same moment.
+func fling(v: Vector3) -> void:
+	_ignore_dv = 4
+	_coyote = 0.0
+	linear_velocity = v
+	# the floppy limbs come along, or they'd drag us back down
+	for l in _limbs:
+		l.linear_velocity = v
 
 ## Knock this character over. `by` is the attacker (for credit), if any.
 func hit(impulse: Vector3, by: Player = null) -> void:

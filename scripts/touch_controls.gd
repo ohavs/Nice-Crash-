@@ -3,7 +3,8 @@ extends Control
 ## Floating joystick + JUMP / GRAB / ACT buttons. Positions come from Game.layout
 ## (fractions of the screen) and can be dragged around in edit mode.
 ## A touch that misses the buttons drives the joystick if it is closer to the
-## joystick's home than to any button. Keyboard fallback for PC testing:
+## joystick's home than to any button; one on the upper part of the screen
+## drags the camera around instead (consume_look()). Keyboard fallback for PC testing:
 ## WASD/arrows, Space, E/Shift (grab), F/Q (act).
 
 signal layout_changed
@@ -25,6 +26,8 @@ var _joy_origin := Vector2.ZERO
 var _joy_pos := Vector2.ZERO
 var _kb := false
 var _btn_touch := {}   # touch index -> "jump"/"grab"/"act"
+var _look_index := -1
+var _look := 0.0
 var _drag := {}        # edit mode: touch index -> [item, grab offset]
 
 func _ready() -> void:
@@ -66,11 +69,17 @@ func _input(event: InputEvent) -> void:
 						grab_held = true
 					queue_redraw()
 					return
+			var near_joy: bool = event.position.distance_to(items.joy[0]) < JOY_RADIUS * 1.6
+			if _look_index == -1 and not near_joy and event.position.y < get_viewport_rect().size.y * 0.5:
+				_look_index = event.index
+				return
 			if _joy_index == -1 and _closest(event.position, items) == "joy":
 				_joy_index = event.index
 				_joy_origin = event.position
 				_joy_pos = event.position
 		else:
+			if event.index == _look_index:
+				_look_index = -1
 			if event.index == _joy_index:
 				_joy_index = -1
 				move = Vector2.ZERO
@@ -79,6 +88,8 @@ func _input(event: InputEvent) -> void:
 					grab_held = false
 				_btn_touch.erase(event.index)
 		queue_redraw()
+	elif event is InputEventScreenDrag and event.index == _look_index:
+		_look += event.relative.x
 	elif event is InputEventScreenDrag and event.index == _joy_index:
 		_joy_pos = event.position
 		var d: Vector2 = _joy_pos - _joy_origin
@@ -119,6 +130,8 @@ func _edit_input(event: InputEvent) -> void:
 
 func release_all() -> void:
 	_joy_index = -1
+	_look_index = -1
+	_look = 0.0
 	move = Vector2.ZERO
 	grab_held = false
 	_btn_touch.clear()
@@ -151,6 +164,12 @@ func consume_jump() -> bool:
 	var j := jump_pressed
 	jump_pressed = false
 	return j
+
+## Horizontal camera drag (pixels) since the last call.
+func consume_look() -> float:
+	var l := _look
+	_look = 0.0
+	return l
 
 func consume_act() -> bool:
 	var a := act_pressed

@@ -39,11 +39,18 @@ copy nature "kenney_natureKit_2.1/Models/GLTF format" \
   tree_palmTall tree_plateau rock_largeA rock_largeC rock_tallA rock_tallE cliff_block_rock \
   cliff_large_rock cliff_top_rock plant_bushLarge plant_bush flower_redA flower_yellowA \
   flower_purpleA mushroom_redGroup log stump_round tent_detailedOpen campfire_logs \
-  fence_simple statue_obelisk grass_large
-copy town "fantasy-town-kit-1.0/Models/GLTF format" windmill watermill stall stallRed treeHighRound rockLarge
+  fence_simple statue_obelisk grass_large mushroom_redTall mushroom_tanTall mushroom_red log_large \
+  stump_roundDetailed tree_oak_fall tree_default_fall tree_pineRoundB tree_pineDefaultA lily_large \
+  canoe cliff_block_stone tree_palm crop_pumpkin rock_tallB plant_bushDetailed flower_redB
+copy town "fantasy-town-kit-1.0/Models/GLTF format" windmill watermill stall stallRed treeHighRound rockLarge \
+  fountainRound cart wheel lantern stallGreen
 copy pirate "kenney_piratekit_1.1/Models/glTF format" ship_light ship_dark cannon cannonBall tower palm_detailed_long formationLarge_rock chest
-copy holiday "kenney_holidaypack/Models/GLTF format" present presentRound
-copy platformer "kenney_platformerkit/Models/GLTF format" saw spikes blockHexagon crate barrel
+copy holiday "kenney_holidaypack/Models/GLTF format" present presentRound treePineSnow treePineSnowRound \
+  snowman snowmanFancy snowFort rockFormationLarge rockFormationMedium candyCane candyCaneMint \
+  trainLocomotive trainWagon sled lightpost snowPatch
+copy platformer "kenney_platformerkit/Models/GLTF format" saw spikes blockHexagon crate barrel \
+  block blockLarge blockSnow blockSnowLarge blockCliff blockMoving bridge platform fence tree treeSnow \
+  mushrooms coinGold jewel heart sign spikesLarge flowers button
 mkdir -p "$ROOT/assets/kenney/sfx"
 A=kenney_impactsounds/Audio
 cp $A/impactPunch_heavy_000.ogg "$ROOT/assets/kenney/sfx/punch.ogg"

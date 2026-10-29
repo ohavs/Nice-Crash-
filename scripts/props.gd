@@ -79,18 +79,21 @@ static func candy_mat(m: StandardMaterial3D) -> StandardMaterial3D:
 		return _mats[m]
 	var c := m.duplicate() as StandardMaterial3D
 	var col := c.albedo_color
-	# the packs' foliage is teal; push it towards a juicy grass green
+	# the packs' foliage is teal; push it towards a fresh (not neon) grass green
 	if col.h > 0.38 and col.h < 0.56 and col.s > 0.15:
-		col.h = lerpf(col.h, 0.31, 0.6)
-	col.s = minf(col.s * 1.35 + 0.04, 1.0)
-	col.v = minf(col.v * 1.04, 1.0)
+		col.h = lerpf(col.h, 0.29, 0.6)
+		col.s = minf(col.s * 1.1, 0.6)
+		col.v = minf(col.v * 0.85, 0.78)
+	else:
+		col.s = minf(col.s * 1.2 + 0.03, 1.0)
+		col.v = col.v * 0.9
 	c.albedo_color = col
 	c.metallic = 0.0
 	c.roughness = 0.75
 	c.diffuse_mode = BaseMaterial3D.DIFFUSE_TOON
 	c.specular_mode = BaseMaterial3D.SPECULAR_TOON
 	c.rim_enabled = true
-	c.rim = 0.25
+	c.rim = 0.12
 	c.rim_tint = 0.7
 	_mats[m] = c
 	return c
@@ -149,3 +152,30 @@ static func _candy_mesh(mesh: Mesh) -> Mesh:
 static func no_shadows(n: Node) -> void:
 	for mi: MeshInstance3D in meshes(n):
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+static var _smooth_meshes := {}
+
+## Swaps every mesh in `n` for a copy with smooth (averaged) normals: the
+## kit's flat-shaded facets look crude up close, the characters read much
+## rounder and cleaner this way. Materials stay as they are.
+static func smooth(n: Node) -> void:
+	for mi: MeshInstance3D in meshes(n):
+		var src := mi.mesh
+		if not _smooth_meshes.has(src):
+			var out := ArrayMesh.new()
+			for i in src.get_surface_count():
+				var st := SurfaceTool.new()
+				st.create_from(src, i)
+				st.deindex()
+				st.generate_normals()
+				st.index()
+				st.commit(out)
+				out.surface_set_material(i, src.surface_get_material(i))
+			_smooth_meshes[src] = out
+		# keep per-instance override materials (tints, candy look)
+		var overrides := []
+		for i in src.get_surface_count():
+			overrides.append(mi.get_surface_override_material(i))
+		mi.mesh = _smooth_meshes[src]
+		for i in overrides.size():
+			mi.set_surface_override_material(i, overrides[i])

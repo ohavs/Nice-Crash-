@@ -85,6 +85,34 @@ ICONS = {
     + shape(rrect_d(16, 34, 22, 14, 6)),
     "crown": shape("M8 50 L12 18 L24 32 L32 12 L40 32 L52 18 L56 50 Z", "#ffd23f")
     + f'<circle cx="32" cy="40" r="4" fill="{INK}"/>',
+    "star": shape(poly(star_points(32, 34, 27, 12, 5)), "#ffd23f")
+    + f'<path d="{poly(star_points(28, 28, 7, 3, 4, 0))}" fill="#fff" opacity="0.8"/>',
+    "star_empty": shape(poly(star_points(32, 34, 27, 12, 5)), "#7a6f8a"),
+    "coin": shape(circle_d(32, 32, 24), "#ffd23f") + shape(circle_d(32, 32, 14), "#ffb703")
+    + line("M32 24 V40", 4, "#fff"),
+    "lock": line("M21 30 V22 A11 11 0 0 1 43 22 V30", 7) + shape(rrect_d(12, 28, 40, 28, 7))
+    + f'<path d="{circle_d(32, 40, 4)}" fill="{INK}"/>' + f'<path d="M30 42 H34 V49 H30 Z" fill="{INK}"/>',
+    "plus": line("M32 13 V51 M13 32 H51", 12),
+    "minus": line("M13 32 H51", 12),
+    # folded treasure map with a red X
+    "map": shape("M6 14 L22 8 L42 14 L58 8 V50 L42 56 L22 50 L6 56 Z", "#f4e3b5")
+    + line("M22 8 V50 M42 14 V56", 2.5, INK)
+    + line("M12 40 Q20 30 28 36 T40 28", 3, "#a07a3a")
+    + line("M44 22 L52 30 M52 22 L44 30", 5, "#ff5a5f"),
+    # party popper with confetti
+    "party": shape("M8 56 L22 22 L42 42 Z", "#ff5a5f") + line("M14 42 L26 50 M18 32 L34 44", 3, "#ffd23f")
+    + shape(circle_d(44, 12, 4), "#4ecdc4") + shape(circle_d(54, 26, 3.5), "#ffd23f")
+    + shape(rrect_d(30, 6, 6, 10, 2), "#b388ff") + shape(rrect_d(48, 38, 9, 6, 2), "#4ecdc4"),
+    # robot head
+    "bot": line("M32 6 V13", 4) + shape(circle_d(32, 6, 4), "#ff5a5f")
+    + shape(rrect_d(10, 14, 44, 38, 11)) + shape(rrect_d(4, 26, 8, 14, 3)) + shape(rrect_d(52, 26, 8, 14, 3))
+    + f'<path d="{circle_d(24, 31, 5)}" fill="{INK}"/><path d="{circle_d(40, 31, 5)}" fill="{INK}"/>'
+    + f'<path d="{rrect_d(22, 41, 20, 5, 2.5)}" fill="{INK}"/>',
+    # two buddies side by side
+    "team": shape(circle_d(21, 22, 10)) + shape("M5 56 Q5 36 21 36 Q37 36 37 56 Z")
+    + shape(circle_d(43, 22, 10), "#4ecdc4") + shape("M27 56 Q27 36 43 36 Q59 36 59 56 Z", "#4ecdc4"),
+    # two fists = against
+    "versus": line("M14 50 L50 14 M14 14 L50 50", 9, "#ff5a5f"),
 }
 
 

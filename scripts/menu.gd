@@ -31,23 +31,18 @@ func _ready() -> void:
 	_build_bottom()
 	Game.update_checked.connect(_on_update_checked)
 	Game.check_for_updates()  # silent check on start
+	if Game.open_party:
+		Game.open_party = false
+		_open_party.call_deferred()
 
 # ------------------------------------------------------------- 3D backdrop
 
 func _build_world() -> void:
-	var svc := SubViewportContainer.new()
-	svc.stretch = true
-	svc.set_anchors_preset(Control.PRESET_FULL_RECT)
-	svc.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(svc)
-	var sv := SubViewport.new()
-	sv.own_world_3d = true
-	sv.msaa_3d = Viewport.MSAA_2X
-	svc.add_child(sv)
+	var sv := UI.world_view(self)
 	var world := Node3D.new()
 	sv.add_child(world)
 	var scenery := Scenery.new()
-	scenery.length = 0.0
+	scenery.area = AABB(Vector3(-3, 0, -3), Vector3(6, 3, 6))
 	scenery.clearance = 20.0
 	world.add_child(scenery)
 
@@ -179,7 +174,7 @@ func _build_bottom() -> void:
 	row.add_child(UI.round_button("right", UI.WHITE, 92, func(): _change_skin(1)))
 	vb.add_child(row)
 
-	var play := UI.button("PLAY", UI.YELLOW, 76, _open_courses, "play", Vector2(0, 150))
+	var play := UI.button("PLAY", UI.YELLOW, 76, _open_modes, "play", Vector2(0, 150))
 	play.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	vb.add_child(play)
 
@@ -189,33 +184,61 @@ func _build_bottom() -> void:
 	vb.add_child(ver)
 	_update_skin_label()
 
-func _play(course: String) -> void:
+func _go(scene: String) -> void:
 	Game.skin = _skin_keys[_skin_i]
-	Game.course = course
 	Game.save_settings()
-	get_tree().change_scene_to_file("res://scenes/main.tscn")
+	get_tree().change_scene_to_file(scene)
 
-var _courses: Control
+var _modes: Control
+var _party: Control
 
-func _open_courses() -> void:
-	if _courses:
+func _open_modes() -> void:
+	if _modes:
 		return
-	var m := UI.modal("PICK A ROUND", UI.YELLOW)
-	_courses = m[0]
+	var m := UI.modal("PLAY", UI.YELLOW)
+	_modes = m[0]
 	var vb: VBoxContainer = m[1]
-	for id in Level.COURSES:
-		var c: Dictionary = Level.COURSES[id]
-		var b := UI.button(c.name, c.color, 34, _play.bind(id), "crown" if c.mode == "survival" else "play")
-		b.custom_minimum_size.x = 470
+	var adv := UI.button("ADVENTURE", UI.TEAL, 48, func():
+		Game.play_mode = "adventure"
+		_go("res://scenes/world_map.tscn"), "map", Vector2(470, 0))
+	vb.add_child(adv)
+	vb.add_child(UI.ink_text("Travel the world level by level. %d / %d stars" % [Game.total_stars(), Adventure.LEVELS.size() * 3], 22))
+	vb.add_child(UI.button("PARTY", UI.CORAL, 48, func():
+		_modes.queue_free()
+		_modes = null
+		_open_party(), "party", Vector2(470, 0)))
+	vb.add_child(UI.ink_text("Everyone vs everyone minigames", 22))
+	vb.add_child(UI.button("BACK", UI.GRAPE, 30, func():
+		_modes.queue_free()
+		_modes = null, "close"))
+	add_child(_modes)
+	UI.pop_in(_modes.get_meta("card"))
+
+func _open_party() -> void:
+	if _party:
+		return
+	var m := UI.modal("PARTY GAMES", UI.CORAL)
+	_party = m[0]
+	var vb: VBoxContainer = m[1]
+	vb.add_theme_constant_override("separation", 10)
+	vb.add_child(UI.stepper("bot", Game.party_bots, 1, 4, func(v):
+		Game.party_bots = v
+		Game.save_settings(), "%d BOTS"))
+	for id in Party.GAMES:
+		var g: Dictionary = Party.GAMES[id]
+		var icon := {"survival": "crown", "koth": "crown", "brawl": "act"}.get(g.mode, "play") as String
+		var b := UI.button(g.name, g.color, 32, func():
+			Game.play_mode = "party"
+			Game.party_id = id
+			_go("res://scenes/main.tscn"), icon)
+		b.custom_minimum_size.x = 480
 		vb.add_child(b)
-		var blurb := UI.ink_text(c.blurb, 20)
-		blurb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		vb.add_child(blurb)
-	vb.add_child(UI.button("BACK", UI.CORAL, 30, func():
-		_courses.queue_free()
-		_courses = null, "close"))
-	add_child(_courses)
-	UI.pop_in(_courses.get_meta("card"))
+		vb.add_child(UI.ink_text(g.blurb, 19))
+	vb.add_child(UI.button("BACK", UI.GRAPE, 30, func():
+		_party.queue_free()
+		_party = null, "close"))
+	add_child(_party)
+	UI.pop_in(_party.get_meta("card"))
 
 func _change_skin(d: int) -> void:
 	_skin_i = wrapi(_skin_i + d, 0, _skin_keys.size())

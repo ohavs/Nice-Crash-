@@ -160,3 +160,66 @@ static func ink_text(text: String, size: int) -> Label:
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	return l
+
+## Row of `total` stars, the first `got` lit.
+static func star_row(got: int, total: int, size: float) -> HBoxContainer:
+	var hb := HBoxContainer.new()
+	hb.alignment = BoxContainer.ALIGNMENT_CENTER
+	hb.add_theme_constant_override("separation", int(size * 0.1))
+	hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for i in total:
+		var tr := TextureRect.new()
+		tr.texture = icon("star" if i < got else "star_empty")
+		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		tr.custom_minimum_size = Vector2(size, size)
+		tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		hb.add_child(tr)
+	return hb
+
+## [-] value [+] row. `on_change(new_value)` is called after every step.
+static func stepper(icon_name: String, value: int, lo: int, hi: int, on_change: Callable, fmt := "%d") -> HBoxContainer:
+	var hb := HBoxContainer.new()
+	hb.alignment = BoxContainer.ALIGNMENT_CENTER
+	hb.add_theme_constant_override("separation", 12)
+	var pl := plate(fmt % value, TEAL, 34, icon_name)
+	pl.custom_minimum_size.x = 210
+	pl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var holder := {"v": value}
+	var step := func(d: int):
+		holder.v = clampi(holder.v + d, lo, hi)
+		plate_label(pl).text = fmt % holder.v
+		on_change.call(holder.v)
+	hb.add_child(round_button("minus", CORAL, 72, step.bind(-1)))
+	hb.add_child(pl)
+	hb.add_child(round_button("plus", YELLOW, 72, step.bind(1)))
+	return hb
+
+## Full-screen 3D view for menus. A SubViewportContainer renders at the
+## canvas size (720x1280 design units), which on a real phone is far below
+## the screen's resolution and looks blurry / pixelated; this keeps the
+## SubViewport at the window's real pixel size and shows it through a
+## TextureRect instead. Returns the SubViewport to put the world in.
+static func world_view(parent: Control) -> SubViewport:
+	var sv := SubViewport.new()
+	sv.own_world_3d = true
+	sv.msaa_3d = Viewport.MSAA_4X
+	sv.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	parent.add_child(sv)
+	var tr := TextureRect.new()
+	tr.set_anchors_preset(Control.PRESET_FULL_RECT)
+	tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	tr.stretch_mode = TextureRect.STRETCH_SCALE
+	tr.texture = sv.get_texture()
+	parent.add_child(tr)
+	var fit := func():
+		var canvas := parent.get_viewport_rect().size
+		var px := Vector2(DisplayServer.window_get_size())
+		var k := maxf(px.x / maxf(canvas.x, 1.0), 1.0) if px.x > 0 else 1.0
+		var want := parent.size if parent.size.x > 1.0 else canvas
+		sv.size = Vector2i(want * k)
+	parent.resized.connect(fit)
+	fit.call_deferred()
+	fit.call()
+	return sv

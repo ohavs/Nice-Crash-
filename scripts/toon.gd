@@ -14,7 +14,7 @@ static func mat(color: Color, outline := true) -> StandardMaterial3D:
 	m.specular_mode = BaseMaterial3D.SPECULAR_TOON
 	m.roughness = 0.6
 	m.rim_enabled = true
-	m.rim = 0.35
+	m.rim = 0.18
 	m.rim_tint = 0.6
 	if outline:
 		m.next_pass = outline_mat()

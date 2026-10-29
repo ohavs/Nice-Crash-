@@ -1,21 +1,27 @@
 class_name Scenery
 extends Node3D
-## The world around a course, built only from real models (Kenney nature,
-## food, furniture, pirate and town kits) under Kenney's painted skybox.
-## Themes:
-##   meadow  - river valley: grassy cliffs, forests, tents, market stalls, sailing ships
-##   kitchen - a giant kitchen: cabinets, stove, fridge, huge food, a sea of tomato soup
-##   pirate  - tropical sea: rock islands with palms, ships, towers, floating barrels
-## Purely visual (no collision). Shared by the menu and the game. Static
-## copies are batched into MultiMeshes so the whole backdrop is a few dozen
-## draw calls.
+## The world around a level, built only from real models (Kenney nature,
+## food, furniture, pirate, town and holiday kits) under Kenney's painted
+## skybox. It rings the level's area (any shape: levels turn) with land, so
+## the play space floats over water with scenery all around. Themes:
+##   meadow  - grassy cliff terraces, forests, tents, market stalls, ships
+##   forest  - dense pine / autumn woods, giant mushrooms, a dark lake
+##   village - hills with windmills, watermills, stalls and orchards
+##   kitchen - a giant kitchen: counters, appliances, a sea of tomato soup
+##   pirate  - tropical sea: rock islands with palms, ships, towers
+##   snow    - snowy cliffs, snow pines, snowmen, an icy sea
+## Purely visual (no collision). Shared by the menu, the world map and the
+## game. Static copies are batched into MultiMeshes so the whole backdrop is
+## a few dozen draw calls.
 
-## Course runs from z = 0 to z = -length; the backdrop surrounds that span.
-var length := 100.0
+## The playable area (world space); the backdrop keeps clear of it.
+var area := AABB(Vector3(-8, 0, -8), Vector3(16, 4, 16))
 var theme := "meadow"
 var shadows := true
-## Keep land at least this far to the side of the course centre line.
-var clearance := 26.0
+## Keep land at least this far outside the area.
+var clearance := 22.0
+## How far the ring of scenery reaches beyond the clearance.
+var reach := 70.0
 ## World height of the water / soup surface.
 var sea_level := -17.0
 
@@ -32,8 +38,31 @@ func _ready() -> void:
 			_kitchen()
 		"pirate":
 			_pirate()
+		"forest":
+			_terraces(["nature/tree_pineRoundB", "nature/tree_pineDefaultA", "nature/tree_pineTallA", "nature/tree_oak_fall", "nature/tree_default_fall", "nature/tree_detailed"],
+				["nature/mushroom_redTall", "nature/mushroom_tanTall", "nature/mushroom_red", "nature/stump_roundDetailed", "nature/plant_bushDetailed", "nature/log"],
+				"nature/cliff_block_rock", 4, 6)
+			_sea(Color("0f4d5c"), Color("1f8a8a"), Color("dfffee"))
+			_ships(["pirate/ship_light"], 1)
+		"village":
+			_terraces(["town/treeHighRound", "nature/tree_oak", "nature/tree_default", "nature/tree_fat"],
+				["town/windmill", "town/watermill", "town/stallRed", "town/stall", "town/stallGreen", "town/cart", "nature/plant_bushLarge", "nature/fence_simple"],
+				"nature/cliff_block_rock", 2, 3)
+			_sea(Color("1670b8"), Color("2fa9dc"), Color("e8fbff"))
+			_ships(["pirate/ship_light", "pirate/ship_dark"], 2)
+		"snow":
+			_terraces(["holiday/treePineSnow", "holiday/treePineSnowRound", "holiday/treePineSnow"],
+				["holiday/snowman", "holiday/snowmanFancy", "holiday/rockFormationLarge", "holiday/lightpost", "holiday/present", "holiday/snowFort", "holiday/candyCane"],
+				"platformer/blockSnowLarge", 2, 3)
+			_sea(Color("2a5d8f"), Color("7fc8e8"), Color("ffffff"))
 		_:
-			_meadow()
+			_terraces(["nature/tree_oak", "nature/tree_default", "nature/tree_detailed", "nature/tree_fat",
+				"nature/tree_pineRoundA", "nature/tree_pineRoundC", "nature/tree_pineTallA", "nature/tree_plateau", "town/treeHighRound"],
+				["nature/plant_bushLarge", "nature/plant_bush", "nature/flower_redA", "nature/flower_yellowA",
+				"nature/flower_purpleA", "nature/mushroom_redGroup", "nature/grass_large", "nature/rock_largeA", "nature/stump_round"],
+				"nature/cliff_block_rock", 2, 3)
+			_sea(Color("1670b8"), Color("2fa9dc"), Color("e8fbff"))
+			_ships(["pirate/ship_light", "pirate/ship_dark"], 3)
 	_clouds()
 	for id in _batches:
 		add_child(Props.multi(id, _batches[id]))
@@ -52,28 +81,33 @@ func _environment() -> void:
 	env.sky_rotation.y = 0.6
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color("d4ddff")
-	env.ambient_light_energy = 0.45
+	env.ambient_light_energy = 0.3
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-	env.tonemap_exposure = 0.92
+	env.tonemap_exposure = 0.8
+	env.tonemap_white = 1.4
 	env.glow_enabled = true
-	env.glow_intensity = 0.25
+	env.glow_intensity = 0.12
 	env.glow_bloom = 0.0
 	env.fog_enabled = true
-	env.fog_light_color = Color("b9b2ff") if theme != "kitchen" else Color("ffe3c4")
-	env.fog_density = 0.0016
+	var fog := {"kitchen": Color("ffe3c4"), "forest": Color("a7d6b8"), "snow": Color("e4f2ff")}
+	env.fog_light_color = fog.get(theme, Color("b9b2ff"))
+	env.fog_density = 0.0018 if theme == "forest" or theme == "snow" else 0.0011
 	env.fog_sky_affect = 0.0
-	env.fog_aerial_perspective = 0.12
+	env.fog_aerial_perspective = 0.0
 	env.adjustment_enabled = true
-	env.adjustment_saturation = 1.1
-	env.adjustment_contrast = 1.05
+	env.adjustment_brightness = 0.96
+	env.adjustment_saturation = 1.05
+	env.adjustment_contrast = 1.12
 	we.environment = env
 	add_child(we)
 	var sun := DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-52, -35, 0)
-	sun.light_energy = 1.0
-	sun.light_color = Color("fff1dc")
+	sun.light_energy = 0.95
+	sun.light_color = Color("fff1dc") if theme != "snow" else Color("f2f6ff")
 	sun.shadow_enabled = shadows
-	sun.directional_shadow_max_distance = 40.0
+	sun.directional_shadow_max_distance = 32.0
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+	sun.shadow_blur = 1.2
 	add_child(sun)
 
 func _sea(deep: Color, shallow: Color, foam: Color) -> void:
@@ -90,7 +124,8 @@ func _sea(deep: Color, shallow: Color, foam: Color) -> void:
 	mat.set_shader_parameter("foam", foam)
 	mi.material_override = mat
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	mi.position = Vector3(0, sea_level, -length * 0.5)
+	var c := area.get_center()
+	mi.position = Vector3(c.x, sea_level, c.z)
 	add_child(mi)
 
 # ------------------------------------------------------------- placement
@@ -109,59 +144,69 @@ func _fit(id: String, size: float) -> float:
 func _pick(arr: Array):
 	return arr[_rng.randi() % arr.size()]
 
-## z positions covering the course plus margins before and after.
-func _span(step: float, before := 60.0, after := 140.0) -> Array:
-	var out := []
-	var z := before
-	while z > -length - after:
-		out.append(z)
-		z -= step
-	return out
-
-# ------------------------------------------------------------- meadow
-
-func _meadow() -> void:
-	_sea(Color("1670b8"), Color("2fa9dc"), Color("e8fbff"))
-	var trees := ["nature/tree_oak", "nature/tree_default", "nature/tree_detailed", "nature/tree_fat",
-		"nature/tree_pineRoundA", "nature/tree_pineRoundC", "nature/tree_pineTallA", "nature/tree_plateau", "town/treeHighRound"]
-	var small := ["nature/plant_bushLarge", "nature/plant_bush", "nature/flower_redA", "nature/flower_yellowA",
-		"nature/flower_purpleA", "nature/mushroom_redGroup", "nature/grass_large", "nature/rock_largeA", "nature/stump_round"]
-	var block := 12.0
-	for side in [-1.0, 1.0]:
-		for z in _span(block):
-			for col in 4:
-				var x: float = side * (clearance + col * block + _rng.randf_range(-2.0, 2.0))
-				# terraces rise away from the course
-				var top := sea_level + 4.0 + col * 3.5 + _rng.randf_range(0.0, 4.0)
-				var h := top - (sea_level - 4.0)
-				var pos := Vector3(x, sea_level - 4.0, z)
-				_put("nature/cliff_block_rock", pos, block * 1.02, PI * 0.5 * _rng.randi_range(0, 3), h)
-				var ground := Vector3(x, top, z)
-				# a few things on top of every block
-				var r := _rng.randf()
-				if r < 0.07 and col > 0:
-					_put("nature/tent_detailedOpen", ground + _jitter(3.0), _fit("nature/tent_detailedOpen", 6.0))
-					_put("nature/campfire_logs", ground + _jitter(3.0) + Vector3(0, 0, 3), _fit("nature/campfire_logs", 2.0))
-				elif r < 0.12 and col > 0:
-					_put("town/stallRed", ground + _jitter(3.0), _fit("town/stallRed", 5.0))
-				for k in _rng.randi_range(1, 3):
-					var id: String = _pick(trees)
-					_put(id, ground + _jitter(4.5), _fit(id, _rng.randf_range(4.0, 7.0)))
-				for k in _rng.randi_range(1, 3):
-					var id: String = _pick(small)
-					_put(id, ground + _jitter(5.0), _fit(id, _rng.randf_range(1.5, 3.0)))
-				if col == 0 and _rng.randf() < 0.35:
-					_put("nature/fence_simple", ground + Vector3(-side * block * 0.42, 0, _rng.randf_range(-3, 3)), _fit("nature/fence_simple", 4.0), PI * 0.5)
-	# hills closing the valley far ahead
-	for i in 9:
-		var x := (i - 4) * 22.0 + _rng.randf_range(-5, 5)
-		var z := -length - _rng.randf_range(150.0, 190.0)
-		_put("nature/rock_tallE", Vector3(x, sea_level - 2.0, z), _fit("nature/rock_tallE", _rng.randf_range(26.0, 40.0)))
-		_put("nature/tree_pineTallA", Vector3(x + _rng.randf_range(-12, 12), sea_level + 2.0, z + 22.0), _fit("nature/tree_pineTallA", 9.0))
-	_ships(["pirate/ship_light", "pirate/ship_dark"], 3)
-
 func _jitter(r: float) -> Vector3:
 	return Vector3(_rng.randf_range(-r, r), 0, _rng.randf_range(-r, r))
+
+## How far (x/z) a point is outside the area; 0 inside.
+func _outside(x: float, z: float) -> float:
+	var dx := maxf(maxf(area.position.x - x, x - area.end.x), 0.0)
+	var dz := maxf(maxf(area.position.z - z, z - area.end.z), 0.0)
+	return maxf(dx, dz)
+
+## Grid cells (centre x, z, distance outside the area) in the ring between
+## `inner` and `inner + reach` around the area.
+func _ring(step: float, inner: float) -> Array:
+	var out := []
+	var x := area.position.x - inner - reach
+	while x < area.end.x + inner + reach:
+		var z := area.position.z - inner - reach
+		while z < area.end.z + inner + reach:
+			var d := _outside(x, z)
+			if d >= inner:
+				out.append([x, z, d])
+			z += step
+		x += step
+	return out
+
+## Unit direction from the area towards a point (for things that face it).
+func _away(x: float, z: float) -> Vector3:
+	var c := area.get_center()
+	var v := Vector3(x - c.x, 0, z - c.z)
+	return v.normalized() if v.length() > 0.1 else Vector3.BACK
+
+# ------------------------------------------------------------- terraces
+
+## Cliff blocks rising in terraces away from the level, with trees and
+## things on top. Used by meadow, forest, village and snow.
+func _terraces(trees: Array, small: Array, block_id: String, trees_per: int, small_per: int) -> void:
+	var block := 12.0
+	var big := ["town/windmill", "town/watermill", "nature/tent_detailedOpen", "holiday/snowFort", "holiday/rockFormationLarge"]
+	for cell in _ring(block, clearance):
+		var d: float = cell[2] - clearance
+		var top := sea_level + 4.0 + d * 0.3 + _rng.randf_range(0.0, 4.0)
+		var h := top - (sea_level - 4.0)
+		var pos := Vector3(cell[0] + _rng.randf_range(-1.5, 1.5), sea_level - 4.0, cell[1] + _rng.randf_range(-1.5, 1.5))
+		var bs := Props.base_size(block_id)
+		var s := block * 1.02 / maxf(bs.x, bs.z)
+		_put(block_id, pos, s, PI * 0.5 * _rng.randi_range(0, 3), h / bs.y)
+		var ground := Vector3(pos.x, top, pos.z)
+		var r := _rng.randf()
+		if r < 0.08 and d > 6.0:
+			var id: String = _pick(small.filter(func(i): return i in big)) if small.any(func(i): return i in big) else ""
+			if id != "":
+				var yaw := atan2(_away(pos.x, pos.z).x, _away(pos.x, pos.z).z) + PI
+				_put(id, ground + _jitter(2.0), _fit(id, 8.0), yaw)
+		elif r < 0.12 and d > 6.0 and theme == "meadow":
+			_put("nature/tent_detailedOpen", ground + _jitter(3.0), _fit("nature/tent_detailedOpen", 6.0))
+			_put("nature/campfire_logs", ground + _jitter(3.0) + Vector3(0, 0, 3), _fit("nature/campfire_logs", 2.0))
+		for k in _rng.randi_range(1, trees_per):
+			var id: String = _pick(trees)
+			_put(id, ground + _jitter(4.5), _fit(id, _rng.randf_range(4.0, 7.0)))
+		for k in _rng.randi_range(1, small_per):
+			var id: String = _pick(small)
+			if id in big:
+				continue
+			_put(id, ground + _jitter(5.0), _fit(id, _rng.randf_range(1.5, 3.2) * (2.0 if theme == "forest" else 1.0)))
 
 # ------------------------------------------------------------- kitchen
 
@@ -172,32 +217,30 @@ func _kitchen() -> void:
 	var w := 16.0
 	var giant := ["food/tomato", "food/watermelon", "food/cheese", "food/bottleKetchup", "food/sodaCan",
 		"food/loaf", "food/pie", "food/burger", "food/cupcake", "food/croissant", "food/broccoli", "food/carrot"]
-	for side in [-1.0, 1.0]:
-		var yaw := PI * 0.5 if side < 0 else -PI * 0.5
-		for z in _span(w, 40.0, 100.0):
-			var id: String = _pick(counter)
-			var s := _fit(id, w)
-			var base := Vector3(side * (clearance + w * 0.5), sea_level - 2.0, z)
-			_put(id, base, s, yaw)
-			var top := sea_level - 2.0 + Props.base_size(id).y * s
-			if _rng.randf() < 0.6:
-				var g: String = _pick(giant)
-				_put(g, Vector3(side * (clearance + w * 0.4), top, z) + _jitter(3.0), _fit(g, _rng.randf_range(5.0, 9.0)))
-		# appliances standing on the counters
-		for k in 3:
-			var app: String = _pick(["furniture/kitchenMicrowave", "furniture/kitchenCoffeeMachine", "furniture/kitchenBlender", "furniture/toaster"])
-			var z := -length * (k + 0.5) / 3.0 + _rng.randf_range(-6, 6)
-			_put(app, Vector3(side * (clearance + w * 0.45), sea_level - 2.0 + Props.base_size("furniture/kitchenCabinet").y * _fit("furniture/kitchenCabinet", w), z), _fit(app, 11.0), yaw)
-	# the fridge and stove wall at the end
-	for i in 5:
-		var id: String = ["furniture/kitchenFridgeLarge", "furniture/kitchenStove", "furniture/kitchenFridgeLarge", "furniture/kitchenSink", "furniture/kitchenFridgeLarge"][i]
-		_put(id, Vector3((i - 2) * 24.0, sea_level - 2.0, -length - 120.0), _fit(id, 24.0), 0.0)
-	# bits of food floating in the soup
+	var apps := ["furniture/kitchenMicrowave", "furniture/kitchenCoffeeMachine", "furniture/kitchenBlender", "furniture/toaster", "furniture/kitchenFridgeLarge"]
+	for cell in _ring(w, clearance):
+		var d: float = cell[2] - clearance
+		if d > w * 2.5:
+			continue
+		var away := _away(cell[0], cell[1])
+		var yaw := atan2(away.x, away.z) + PI
+		var id: String = _pick(counter)
+		var s := _fit(id, w)
+		var base := Vector3(cell[0], sea_level - 2.0, cell[1])
+		_put(id, base, s, yaw)
+		var top := sea_level - 2.0 + Props.base_size(id).y * s
+		var r := _rng.randf()
+		if r < 0.45:
+			var g: String = _pick(giant)
+			_put(g, Vector3(cell[0], top, cell[1]) + _jitter(3.0), _fit(g, _rng.randf_range(5.0, 9.0)))
+		elif r < 0.6:
+			var app: String = _pick(apps)
+			_put(app, Vector3(cell[0], top, cell[1]), _fit(app, 11.0), yaw)
+	# bits of food floating in the soup between the counters and the level
 	for i in 30:
 		var id: String = _pick(["food/tomato", "food/carrot", "food/broccoli", "food/croissant", "food/cookie"])
-		var p := Vector3(_rng.randf_range(-clearance + 4, clearance - 4), sea_level - 0.4, _rng.randf_range(-length - 60, 40))
-		if absf(p.x) < 8.0:
-			p.x += signf(p.x + 0.01) * 8.0
+		var p := Vector3(_rng.randf_range(area.position.x - clearance, area.end.x + clearance), sea_level - 0.4,
+			_rng.randf_range(area.position.z - clearance, area.end.z + clearance))
 		var n := Props.sized(id, _rng.randf_range(2.0, 4.0))
 		n.position = p
 		n.rotation.y = _rng.randf() * TAU
@@ -210,23 +253,22 @@ func _kitchen() -> void:
 func _pirate() -> void:
 	sea_level = -16.0
 	_sea(Color("0b62a8"), Color("1fb4cc"), Color("f0ffff"))
-	for z in _span(26.0, 60.0, 160.0):
-		for side in [-1.0, 1.0]:
-			var x: float = side * _rng.randf_range(clearance + 2.0, clearance + 70.0)
-			var pos := Vector3(x, sea_level - 3.0, z + _rng.randf_range(-8, 8))
-			var size := _rng.randf_range(14.0, 26.0)
-			_put("pirate/formationLarge_rock", pos, _fit("pirate/formationLarge_rock", size))
-			var top := sea_level - 3.0 + Props.base_size("pirate/formationLarge_rock").y * _fit("pirate/formationLarge_rock", size) * 0.35
-			for k in _rng.randi_range(1, 3):
-				_put("pirate/palm_detailed_long", Vector3(x, top, pos.z) + _jitter(size * 0.3), _fit("pirate/palm_detailed_long", _rng.randf_range(6.0, 9.0)))
-			if _rng.randf() < 0.18:
-				_put("pirate/tower", Vector3(x + side * 6.0, sea_level - 1.0, pos.z + 10.0), _fit("pirate/tower", 12.0))
+	for cell in _ring(26.0, clearance):
+		if _rng.randf() < 0.35:
+			continue
+		var pos := Vector3(cell[0] + _rng.randf_range(-8, 8), sea_level - 3.0, cell[1] + _rng.randf_range(-8, 8))
+		var size := _rng.randf_range(14.0, 26.0)
+		_put("pirate/formationLarge_rock", pos, _fit("pirate/formationLarge_rock", size))
+		var top := sea_level - 3.0 + Props.base_size("pirate/formationLarge_rock").y * _fit("pirate/formationLarge_rock", size) * 0.35
+		for k in _rng.randi_range(1, 3):
+			_put("pirate/palm_detailed_long", Vector3(pos.x, top, pos.z) + _jitter(size * 0.3), _fit("pirate/palm_detailed_long", _rng.randf_range(6.0, 9.0)))
+		if _rng.randf() < 0.18:
+			_put("pirate/tower", Vector3(pos.x + 6.0, sea_level - 1.0, pos.z + 10.0), _fit("pirate/tower", 12.0))
 	_ships(["pirate/ship_dark", "pirate/ship_light"], 6)
 	for i in 14:
 		var id: String = _pick(["platformer/barrel", "pirate/chest", "platformer/crate"])
-		var p := Vector3(_rng.randf_range(-clearance, clearance), sea_level - 0.5, _rng.randf_range(-length - 60, 40))
-		if absf(p.x) < 9.0:
-			p.x += signf(p.x + 0.01) * 9.0
+		var p := Vector3(_rng.randf_range(area.position.x - clearance, area.end.x + clearance), sea_level - 0.5,
+			_rng.randf_range(area.position.z - clearance, area.end.z + clearance))
 		var n := Props.sized(id, _rng.randf_range(1.6, 2.6))
 		n.position = p
 		Props.no_shadows(n)
@@ -237,14 +279,17 @@ func _pirate() -> void:
 
 func _ships(ids: Array, n: int) -> void:
 	for i in n:
-		var side := -1.0 if i % 2 else 1.0
 		var id: String = ids[i % ids.size()]
 		var ship := Props.sized(id, _rng.randf_range(16.0, 22.0), 2)
-		var p := Vector3(side * _rng.randf_range(clearance + 18.0, clearance + 60.0), sea_level - 1.2, _rng.randf_range(-length - 80.0, 30.0))
-		if theme == "meadow":
-			p.x = side * _rng.randf_range(10.0, clearance - 8.0)  # sailing up the river
+		# somewhere on the open water around the level
+		var p := Vector3.ZERO
+		for tries in 12:
+			p = Vector3(_rng.randf_range(area.position.x - clearance - 30, area.end.x + clearance + 30), sea_level - 1.2,
+				_rng.randf_range(area.position.z - clearance - 30, area.end.z + clearance + 30))
+			if _outside(p.x, p.z) > 10.0 and (theme == "pirate" or _outside(p.x, p.z) < clearance - 6.0):
+				break
 		ship.position = p
-		ship.rotation.y = _rng.randf_range(-0.3, 0.3) + (PI if _rng.randf() < 0.5 else 0.0)
+		ship.rotation.y = _rng.randf() * TAU
 		Props.no_shadows(ship)
 		add_child(ship)
 		_drifters.append([ship, p, 0.35, 0.7, _rng.randf() * TAU, 1.5])
@@ -253,8 +298,10 @@ func _clouds() -> void:
 	var cloud := "models/cloud"
 	for i in 26:
 		var c := Props.make(cloud)
-		var side := -1.0 if i % 2 else 1.0
-		var p := Vector3(side * _rng.randf_range(12.0, 90.0), _rng.randf_range(6.0, 26.0), _rng.randf_range(-length - 120.0, 40.0))
+		var p := Vector3(_rng.randf_range(area.position.x - 90, area.end.x + 90), _rng.randf_range(10.0, 30.0) + area.end.y,
+			_rng.randf_range(area.position.z - 90, area.end.z + 90))
+		if _outside(p.x, p.z) < 8.0:
+			p.x += 30.0 * signf(p.x - area.get_center().x + 0.01)
 		c.position = p
 		var cs := _rng.randf_range(4.0, 9.0)
 		c.scale = Vector3(cs, cs * 0.6, cs)

@@ -14,8 +14,21 @@ const DEFAULT_LAYOUT := {
 
 var sounds := {}
 var skin := "egg"
-var course := "meadow"
 var layout := DEFAULT_LAYOUT.duplicate()
+## "adventure" (world levels) or "party" (minigames).
+var play_mode := "adventure"
+var level_id := "meadow"
+var party_id := "waffle"
+## Bots in adventure (0-4) and whether they're on your team.
+var bots := 2
+var coop := false
+## Opponents in party games (1-4).
+var party_bots := 3
+## Menu should reopen the party game list (coming back from a party game).
+var open_party := false
+## Adventure progress: highest unlocked level index, best stars per level.
+var unlocked := 0
+var stars := {}
 var _slowmo_left := 0.0
 
 func _ready() -> void:
@@ -42,7 +55,15 @@ func load_settings() -> void:
 	skin = cfg.get_value("game", "skin", skin)
 	if not Player.SKINS.has(skin):
 		skin = "egg"
-	course = cfg.get_value("game", "course", course)
+	level_id = cfg.get_value("game", "level", level_id)
+	party_id = cfg.get_value("game", "party", party_id)
+	bots = clampi(int(cfg.get_value("game", "bots", bots)), 0, 4)
+	coop = bool(cfg.get_value("game", "coop", coop))
+	party_bots = clampi(int(cfg.get_value("game", "party_bots", party_bots)), 1, 4)
+	unlocked = int(cfg.get_value("progress", "unlocked", unlocked))
+	var st = cfg.get_value("progress", "stars", {})
+	if st is Dictionary:
+		stars = st
 	for k in DEFAULT_LAYOUT:
 		var v = cfg.get_value("controls", k, DEFAULT_LAYOUT[k])
 		if v is Vector2:
@@ -51,10 +72,28 @@ func load_settings() -> void:
 func save_settings() -> void:
 	var cfg := ConfigFile.new()
 	cfg.set_value("game", "skin", skin)
-	cfg.set_value("game", "course", course)
+	cfg.set_value("game", "level", level_id)
+	cfg.set_value("game", "party", party_id)
+	cfg.set_value("game", "bots", bots)
+	cfg.set_value("game", "coop", coop)
+	cfg.set_value("game", "party_bots", party_bots)
+	cfg.set_value("progress", "unlocked", unlocked)
+	cfg.set_value("progress", "stars", stars)
 	for k in layout:
 		cfg.set_value("controls", k, layout[k])
 	cfg.save(SETTINGS_PATH)
+
+## Records a finished adventure level: best stars, unlocks the next one.
+func complete_level(id: String, got_stars: int) -> void:
+	stars[id] = maxi(int(stars.get(id, 0)), got_stars)
+	unlocked = maxi(unlocked, Adventure.index_of(id) + 1)
+	save_settings()
+
+func total_stars() -> int:
+	var n := 0
+	for k in stars:
+		n += int(stars[k])
+	return n
 
 func reset_layout() -> void:
 	layout = DEFAULT_LAYOUT.duplicate()
