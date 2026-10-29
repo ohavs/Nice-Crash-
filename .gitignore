@@ -1,4 +1,0 @@
-.godot/
-build/
-*.keystore
-!android/*.enc
