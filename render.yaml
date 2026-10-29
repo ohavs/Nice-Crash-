@@ -1,0 +1,11 @@
+# Render.com blueprint for the online relay (free plan).
+# Dashboard -> New -> Blueprint -> pick this repo. See server/README.md.
+services:
+  - type: web
+    name: nice-crash-relay
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /

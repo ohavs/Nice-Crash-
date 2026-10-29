@@ -555,7 +555,7 @@ func _take_egg(holder: Node3D, mi: int, local: bool) -> void:
 	Game.play("powerup", 0.05, -2.0)
 	if local:
 		Net.world_event("egg", [_eggs.find_custom(func(e): return e[0] == holder)])
-		advance(mi)
+	advance(mi)
 
 ## Network: someone else picked up egg `i`.
 func remote_egg(i: int) -> void:
@@ -670,7 +670,7 @@ func _light(holder: Node3D, local: bool) -> void:
 	Fx.word(self, holder.global_position + Vector3.UP * 2.6, word, UI.YELLOW, 1.1)
 	if local:
 		Net.world_event("light", [holder.get_meta("idx")])
-		advance(mi)
+	advance(mi)
 
 func remote_light(i: int) -> void:
 	if i >= 0 and i < _switches.size():
@@ -709,7 +709,7 @@ func _reach(holder: Node3D, local: bool) -> void:
 	tw.tween_property(holder, "scale", Vector3.ONE, 0.4).set_trans(Tween.TRANS_ELASTIC)
 	if local:
 		Net.world_event("reach", [holder.get_meta("idx")])
-		advance(mi)
+	advance(mi)
 
 func remote_reach(i: int) -> void:
 	if i >= 0 and i < _goals.size():

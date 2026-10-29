@@ -360,7 +360,7 @@ class LocalRelay extends Node:
 				if not m is Dictionary:
 					ws.close()
 					continue
-				if m.get("op") == "join" and str(m.get("room", "")) != _code:
+				if m.get("op") == "join" and str(m.get("room", "")) not in [_code, "LAN"]:
 					ws.send_text(JSON.stringify({"op": "error", "error": "No room " + str(m.get("room", ""))}))
 					continue
 				var id := _next

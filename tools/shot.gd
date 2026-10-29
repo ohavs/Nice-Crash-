@@ -41,6 +41,8 @@ func _setup() -> void:
 ## function state would read as "quit").
 func _save(suffix: String, then_quit := false) -> void:
 	RenderingServer.frame_post_draw.connect(func():
+		print("frame: %d triangles, %d draw calls, %d objects" % [Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME),
+			Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME), Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)])
 		root.get_texture().get_image().save_png(_out + suffix + ".png")
 		print("saved ", _out + suffix + ".png")
 		if then_quit:

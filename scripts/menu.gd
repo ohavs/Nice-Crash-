@@ -129,7 +129,7 @@ func _build_title() -> void:
 	_burst.size = Vector2(760, 760)
 	_burst.position = -_burst.size * 0.5
 	_burst.pivot_offset = _burst.size * 0.5
-	_burst.modulate.a = 0.55
+	_burst.modulate = Color(1.0, 0.86, 0.45, 0.6)
 	_burst.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	holder.add_child(_burst)
 
@@ -198,16 +198,19 @@ func _open_modes() -> void:
 	var m := UI.modal("PLAY", UI.YELLOW)
 	_modes = m[0]
 	var vb: VBoxContainer = m[1]
-	var adv := UI.button("ADVENTURE", UI.TEAL, 48, func():
+	var adv := UI.button("WORLD", UI.TEAL, 48, func():
 		Game.play_mode = "adventure"
 		_go("res://scenes/world_map.tscn"), "map", Vector2(470, 0))
 	vb.add_child(adv)
-	vb.add_child(UI.ink_text("Travel the world level by level. %d / %d stars" % [Game.total_stars(), Adventure.LEVELS.size() * 3], 22))
+	vb.add_child(UI.ink_text("Explore open worlds, beat skeletons, do missions. %d / %d stars" % [Game.total_stars(), Adventure.LEVELS.size() * 3], 22))
 	vb.add_child(UI.button("PARTY", UI.CORAL, 48, func():
 		_modes.queue_free()
 		_modes = null
 		_open_party(), "party", Vector2(470, 0)))
 	vb.add_child(UI.ink_text("Everyone vs everyone minigames", 22))
+	vb.add_child(UI.button("WITH FRIENDS", UI.YELLOW, 48, func():
+		_go("res://scenes/lobby.tscn"), "online", Vector2(470, 0)))
+	vb.add_child(UI.ink_text("Online or on the same Wi-Fi: party shows or the world together", 22))
 	vb.add_child(UI.button("BACK", UI.GRAPE, 30, func():
 		_modes.queue_free()
 		_modes = null, "close"))
@@ -224,13 +227,24 @@ func _open_party() -> void:
 	vb.add_child(UI.stepper("bot", Game.party_bots, 1, 4, func(v):
 		Game.party_bots = v
 		Game.save_settings(), "%d BOTS"))
+	vb.add_child(UI.stepper("trophy", Game.party_rounds, 1, 10, func(v):
+		Game.party_rounds = v
+		Game.save_settings(), "%d ROUNDS"))
+	vb.add_child(UI.ink_text("More than 1 round: a show of random games with a leaderboard", 19))
+	var start_show := func(id: String):
+		Game.play_mode = "party"
+		Game.party_id = id
+		Game.show = {}
+		if Game.party_rounds > 1:
+			Game.show = {"rounds": Game.party_rounds, "round": 1, "totals": {}, "names": {}, "played": []}
+		_go("res://scenes/main.tscn")
+	var rnd := UI.button("RANDOM SHOW", UI.YELLOW, 32, func(): start_show.call(Party.GAMES.keys().pick_random()), "refresh")
+	rnd.custom_minimum_size.x = 480
+	vb.add_child(rnd)
 	for id in Party.GAMES:
 		var g: Dictionary = Party.GAMES[id]
 		var icon := {"survival": "crown", "koth": "crown", "brawl": "act"}.get(g.mode, "play") as String
-		var b := UI.button(g.name, g.color, 32, func():
-			Game.play_mode = "party"
-			Game.party_id = id
-			_go("res://scenes/main.tscn"), icon)
+		var b := UI.button(g.name, g.color, 32, start_show.bind(id), icon)
 		b.custom_minimum_size.x = 480
 		vb.add_child(b)
 		vb.add_child(UI.ink_text(g.blurb, 19))
@@ -258,6 +272,12 @@ func _open_settings() -> void:
 	_settings = m[0]
 	var vb: VBoxContainer = m[1]
 	vb.add_child(UI.button("CONTROLS LAYOUT", UI.GRAPE, 38, _open_editor, "grab"))
+	vb.add_child(UI.label("ONLINE SERVER", 26, UI.INK, false))
+	var url := UI.field(Game.relay_url, "wss://your-server.onrender.com", 20, 120, 470)
+	url.text_changed.connect(func(t):
+		Game.relay_url = t.strip_edges()
+		Game.save_settings())
+	vb.add_child(url)
 	_update_btn = UI.button("CHECK FOR UPDATES", UI.TEAL, 34, _on_update_pressed, "refresh")
 	vb.add_child(_update_btn)
 	_update_status = UI.ink_text(Game.version_text(), 28)

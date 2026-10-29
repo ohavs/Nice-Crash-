@@ -55,7 +55,7 @@ static func label(text: String, size: int, color := WHITE, outline := true) -> L
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return l
 
-## Big candy button. `icon_name` is a file in assets/ui/. Text may be "".
+## Big candy button. `icon_name` is one of UI.ICONS. Text may be "".
 static func button(text: String, color: Color, size: int, cb: Callable, icon_name := "", min_size := Vector2.ZERO) -> Button:
 	var b := Button.new()
 	b.text = text
@@ -245,3 +245,23 @@ static func world_view(parent: Control) -> SubViewport:
 	fit.call_deferred()
 	fit.call()
 	return sv
+
+## Chunky text box (names, room codes, addresses).
+static func field(text: String, placeholder: String, size: int, max_len := 24, min_w := 360.0) -> LineEdit:
+	var e := LineEdit.new()
+	e.text = text
+	e.placeholder_text = placeholder
+	e.max_length = max_len
+	e.custom_minimum_size = Vector2(min_w, size * 1.9)
+	e.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	e.add_theme_font_override("font", font())
+	e.add_theme_font_size_override("font_size", size)
+	e.add_theme_color_override("font_color", INK)
+	e.add_theme_color_override("font_placeholder_color", Color(INK, 0.35))
+	e.add_theme_color_override("caret_color", INK)
+	var st := ChunkyStyle.new(WHITE, size * 0.6, 6.0, true, Vector2(size * 0.5, size * 0.2))
+	st.gloss = false
+	e.add_theme_stylebox_override("normal", st)
+	e.add_theme_stylebox_override("focus", st)
+	e.add_theme_stylebox_override("read_only", st)
+	return e

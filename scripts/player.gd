@@ -82,6 +82,7 @@ var _invuln := 0.0
 var _net_goal := Transform3D()
 var _net_vel := Vector3.ZERO
 var _hidden := false
+var _net_age := 0.0
 
 var input_dir := Vector3.ZERO          # world-space, set by the controller each frame
 var jump_requested := false
@@ -1272,6 +1273,7 @@ func net_state() -> Array:
 	return [net_id, global_position, global_basis.get_rotation_quaternion(), linear_velocity, flags, item, ammo, hp]
 
 func net_apply(st: Array) -> void:
+	_net_age = 0.0
 	_net_goal = Transform3D(Basis(st[2] as Quaternion), st[1])
 	_net_vel = st[3]
 	var flags: int = st[4]
@@ -1296,7 +1298,11 @@ func net_apply(st: Array) -> void:
 ## Puppets glide towards the owner's latest state (a little ahead, along
 ## its velocity, so they don't trail behind).
 func _puppet_step(delta: float) -> void:
-	_net_goal.origin += _net_vel * delta
+	_net_age += delta
+	if _net_age < 0.3:
+		_net_goal.origin += _net_vel * delta
+	else:
+		_net_vel = Vector3.ZERO
 	var t := global_transform.interpolate_with(_net_goal, minf(delta * 14.0, 1.0))
 	if t.origin.distance_to(_net_goal.origin) > 6.0:
 		t = _net_goal

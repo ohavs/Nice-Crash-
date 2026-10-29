@@ -11,15 +11,15 @@ extends CharacterBody3D
 signal died(e: Enemy, by: Player)
 
 const KINDS := {
-	"minion": {"model": "Skeleton_Minion", "hp": 2, "speed": 3.6, "height": 1.7, "weapon": "Skeleton_Blade",
+	"minion": {"model": "Skeleton_Minion", "hp": 3, "speed": 3.6, "height": 1.7, "weapon": "Skeleton_Blade",
 		"attack": "1H_Melee_Attack_Chop", "range": 1.7, "hit_at": 0.42, "cooldown": 1.3, "name": "BONEHEAD"},
-	"warrior": {"model": "Skeleton_Warrior", "hp": 4, "speed": 3.2, "height": 1.95, "weapon": "Skeleton_Axe",
+	"warrior": {"model": "Skeleton_Warrior", "hp": 5, "speed": 3.2, "height": 1.95, "weapon": "Skeleton_Axe",
 		"shield": "Skeleton_Shield_Small_A", "attack": "1H_Melee_Attack_Chop", "range": 1.9, "hit_at": 0.42, "cooldown": 1.5, "name": "BONE KNIGHT"},
-	"rogue": {"model": "Skeleton_Rogue", "hp": 2, "speed": 3.8, "height": 1.7, "weapon": "Skeleton_Crossbow",
+	"rogue": {"model": "Skeleton_Rogue", "hp": 3, "speed": 3.8, "height": 1.7, "weapon": "Skeleton_Crossbow",
 		"attack": "1H_Ranged_Shoot", "range": 13.0, "keep": 7.0, "hit_at": 0.35, "cooldown": 2.2, "shot": "arrow", "name": "BONE ARCHER"},
-	"mage": {"model": "Skeleton_Mage", "hp": 2, "speed": 3.0, "height": 1.75, "weapon": "Skeleton_Staff",
+	"mage": {"model": "Skeleton_Mage", "hp": 3, "speed": 3.0, "height": 1.75, "weapon": "Skeleton_Staff",
 		"attack": "Spellcast_Shoot", "range": 12.0, "keep": 8.0, "hit_at": 0.5, "cooldown": 2.6, "shot": "skull", "name": "BONE MAGE"},
-	"chief": {"model": "Skeleton_Warrior", "hp": 10, "speed": 3.4, "height": 2.8, "weapon": "Skeleton_Axe",
+	"chief": {"model": "Skeleton_Warrior", "hp": 14, "speed": 3.4, "height": 2.8, "weapon": "Skeleton_Axe",
 		"shield": "Skeleton_Shield_Small_A", "attack": "2H_Melee_Attack_Spin", "range": 2.8, "hit_at": 0.55, "cooldown": 1.6, "name": "BONE CHIEF"},
 }
 const GRAVITY := 9.8 * 1.5

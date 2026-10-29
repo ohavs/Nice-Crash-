@@ -1,10 +1,10 @@
 extends Control
-## Adventure world map: every level is an island in the sea, dressed like the
-## place it takes you to (meadow, mushroom woods, windmill village, a giant
-## kitchen, a pirate cove, frosty peaks), linked by stepping stones. Your
-## character hops from island to island; locked islands wait behind a lock.
-## The card at the bottom shows stars, how many bots come along (0-4), with
-## you or against you, and PLAY.
+## World map: every open-world zone is an island in the sea, dressed like
+## the place it takes you to (green valley, mushroom woods, spooky hollow,
+## cannon cove, frosty peaks), linked by stepping stones. Your character hops
+## from island to island; locked islands wait behind a lock (2 stars in the
+## zone before opens the next). The card at the bottom shows the stars
+## (missions done), how many bot buddies come along (0-4) and PLAY.
 
 const ISLAND_Y := -14.0
 const GAP := 17.0
@@ -78,7 +78,7 @@ func _put(id: String, pos: Vector3, size: float, yaw := 0.0) -> Node3D:
 func _island(i: int) -> void:
 	var info: Dictionary = Adventure.LEVELS[i]
 	var p := _islands[i]
-	var ground := {"snow": "platformer/blockSnowLarge", "kitchen": "food/cuttingBoard"}.get(info.theme, "platformer/blockLarge") as String
+	var ground := {"snow": "platformer/blockSnowLarge"}.get(info.theme, "platformer/blockLarge") as String
 	var base := Props.base_size(ground)
 	var g := Props.make(ground)
 	var depth := 4.0 if ground != "food/cuttingBoard" else 0.6
@@ -94,23 +94,24 @@ func _island(i: int) -> void:
 	# landmark + dressing
 	match info.id:
 		"meadow":
-			_put("nature/tree_oak", p + Vector3(-2.5, 0, -2.2), 3.4)
-			_put("nature/tree_default", p + Vector3(2.8, 0, -1.8), 2.6)
+			_put("quaternius/nature/CommonTree_1", p + Vector3(-2.5, 0, -2.2), 3.4)
+			_put("kaykit/medieval/building_windmill_red", p + Vector3(2.8, 0, -1.8), 2.8)
 			for k in 5:
 				_put(["nature/flower_redA", "nature/flower_yellowA", "nature/plant_bush"][k % 3], p + Vector3(-3.0 + k * 1.5, 0, 3.0), 0.9, k)
 		"forest":
 			_put("nature/mushroom_red", p + Vector3(-2.2, 0, -1.5), 3.2)
-			_put("nature/tree_pineRoundB", p + Vector3(2.6, 0, -2.4), 3.0)
+			_put("quaternius/nature/GiantPine_1", p + Vector3(2.6, 0, -2.4), 3.0)
 			_put("nature/tree_oak_fall", p + Vector3(3.2, 0, 1.6), 2.4)
 			_put("nature/mushroom_tanTall", p + Vector3(-3.2, 0, 2.2), 1.2)
-		"village":
-			_put("town/windmill", p + Vector3(-1.5, 0, -2.0), 4.5, 0.4)
-			_put("town/stallRed", p + Vector3(2.8, 0, 0.5), 2.0, -0.6)
-			_put("town/treeHighRound", p + Vector3(3.0, 0, -2.8), 2.0)
-		"kitchen":
-			_put("furniture/toaster", p + Vector3(-2.0, 0, -1.8), 3.0, 0.3)
-			_put("food/pizza", p + Vector3(2.4, 0, -1.5), 2.6)
-			_put("food/cupcake", p + Vector3(2.8, 0, 2.0), 1.2)
+		"graveyard":
+			_put("kaykit/halloween/crypt", p + Vector3(-1.0, 0, -2.4), 3.6, 0.3)
+			_put("kaykit/halloween/tree_dead_large", p + Vector3(2.8, 0, -1.8), 2.6)
+			_put("kaykit/halloween/pumpkin_orange_jackolantern", p + Vector3(2.6, 0, 1.8), 1.0, -0.4)
+			_put("kaykit/halloween/gravestone", p + Vector3(-3.0, 0, 1.0), 1.0, 0.2)
+			var sk := _put("kaykit/skeletons/Skeleton_Minion", p + Vector3(0.6, 0, 0.8), 1.2, 0.5)
+			var ap: AnimationPlayer = sk.find_children("*", "AnimationPlayer", true, false)[0]
+			ap.get_animation("Taunt").loop_mode = Animation.LOOP_LINEAR
+			ap.play("Taunt")
 		"cove":
 			_put("pirate/ship_light", p + Vector3(-0.5, 0.2, -2.5), 6.0, 0.8)
 			_put("pirate/palm_detailed_long", p + Vector3(3.0, 0, 1.0), 3.0)
@@ -232,30 +233,10 @@ func _build_ui() -> void:
 	inner.add_child(_blurb)
 	inner.add_child(UI.stepper("bot", Game.bots, 0, 4, func(v):
 		Game.bots = v
-		Game.save_settings()
-		_update_team(), "%d BOTS"))
-	_team_row = HBoxContainer.new()
-	(_team_row as HBoxContainer).alignment = BoxContainer.ALIGNMENT_CENTER
-	inner.add_child(_team_row)
-	_team_btn = UI.button("", UI.TEAL, 32, func():
-		Game.coop = not Game.coop
-		Game.save_settings()
-		_update_team(), "team", Vector2(420, 0))
-	_team_row.add_child(_team_btn)
+		Game.save_settings(), "%d BUDDIES"))
 	_play_btn = UI.button("PLAY", UI.YELLOW, 62, _play, "play", Vector2(380, 0))
 	_play_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	inner.add_child(_play_btn)
-	_update_team()
-
-func _update_team() -> void:
-	_team_row.visible = Game.bots > 0
-	_team_btn.text = "WITH YOU (TEAM)" if Game.coop else "AGAINST YOU (RACE)"
-	_team_btn.icon = UI.icon("team" if Game.coop else "versus")
-	for st in ["normal", "hover", "pressed", "hover_pressed", "disabled"]:
-		var s := _team_btn.get_theme_stylebox(st) as ChunkyStyle
-		if s:
-			s.color = UI.TEAL if Game.coop else UI.CORAL
-	_team_btn.queue_redraw()
 
 func _select(i: int, hop := true) -> void:
 	i = clampi(i, 0, Adventure.LEVELS.size() - 1)
@@ -264,7 +245,7 @@ func _select(i: int, hop := true) -> void:
 	var info: Dictionary = Adventure.LEVELS[i]
 	var open := i <= Game.unlocked
 	UI.plate_label(_name_plate).text = "%d. %s" % [i + 1, info.name]
-	_blurb.text = info.blurb if open else "Locked - finish level %d first!" % i
+	_blurb.text = info.blurb if open else "Locked - get 2 stars in zone %d first!" % i
 	for c in _stars_box.get_children():
 		c.queue_free()
 	if open:

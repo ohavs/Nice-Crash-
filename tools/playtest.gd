@@ -55,6 +55,13 @@ func _process(delta: float) -> bool:
 		_main.player.add_child(b)
 	if not _main.running and not _main._over:
 		return false
+	if OS.has_environment("PT_START") and not _main.player.has_meta("moved") and _main.player.is_grounded():
+		# drop YOU somewhere: PT_START=x,z
+		_main.player.set_meta("moved", true)
+		var xz := OS.get_environment("PT_START").split(",")
+		var g: Vector3 = _main.world.ground(float(xz[0]), float(xz[1]))
+		_main.player.checkpoint = g
+		_main.player.respawn(false)
 	_t += delta
 	if _t >= _next_report or _main._over:
 		_next_report += float(OS.get_environment("PT_EVERY")) if OS.has_environment("PT_EVERY") else 10.0
@@ -65,6 +72,7 @@ func _process(delta: float) -> bool:
 				line += "(%.0f,%.0f,%.0f)" % [p.global_position.x, p.global_position.y, p.global_position.z]
 		if _main.world:
 			line += "  missions " + ", ".join(_main.world.missions.map(func(m): return "%d/%d" % [m.got, m.need]))
+			line += " enemies %d" % _main.world.enemies.filter(func(e): return is_instance_valid(e) and not e.is_dead()).size()
 		print(line)
 	if _main._over:
 		print("OVER at %.1f s  coins %d/%d  crashes %d  kos %d" % [_t, _main.coins, _main.level.coins_total, _main.crashes, _main.kos])
