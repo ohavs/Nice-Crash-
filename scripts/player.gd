@@ -16,6 +16,10 @@ signal eliminated
 ## Emitted on the attacker when one of its hits knocks someone over.
 signal bonked(victim: Player, how: String)
 signal item_changed(item: String, ammo: int)
+## Open world health: lost a heart (or got one back).
+signal hp_changed(hp: int)
+## Out of hearts: down for a moment, then back at the last camp, healed.
+signal knocked_out
 
 const SKINS := {
 	"egg": {"model": "food/egg", "custom": "egg", "name": "Eggbert", "height": 1.25, "width": 0.98, "pod": "food/eggCup"},
@@ -66,6 +70,18 @@ var respawn_enabled := true
 var team := -1
 ## Below this height you've fallen off the level.
 var kill_y := -15.0
+## Hearts (open world). 0 = no health: races and party games.
+var max_hp := 0
+var hp := 0
+## Network copy of someone else's player: no physics of its own, follows
+## the owner's stream (see net_apply). Hits on it go to its owner.
+var puppet := false
+## Network id ("<peer>:<slot>"), "" offline.
+var net_id := ""
+var _invuln := 0.0
+var _net_goal := Transform3D()
+var _net_vel := Vector3.ZERO
+var _hidden := false
 
 var input_dir := Vector3.ZERO          # world-space, set by the controller each frame
 var jump_requested := false
@@ -120,8 +136,8 @@ var _blink_in := 2.0
 var _dizzy := 0.0
 var _windup := 0.0
 var _peel: Node3D
-## Locked-on throw target (human only, see _update_aim).
-var aim_target: Player
+## Locked-on throw target (human only, see _update_aim): a Player or an Enemy.
+var aim_target: Node3D
 
 func _ready() -> void:
 	mass = 1.0
@@ -386,6 +402,13 @@ func _exit_tree() -> void:
 func _physics_process(delta: float) -> void:
 	if is_out:
 		return
+	if _invuln > 0.0:
+		_invuln -= delta
+		if not _hidden:
+			visual.visible = _invuln <= 0.0 or fmod(_invuln, 0.2) > 0.08
+	if puppet:
+		_puppet_step(delta)
+		return
 	if _hold:
 		_apply_hold()
 		_animate_visual(delta)
@@ -519,6 +542,10 @@ func forward() -> Vector3:
 # ---------------------------------------------------------------- crash
 
 func _on_body_entered(b: Node) -> void:
+	if b is Enemy and is_crashed and linear_velocity.length() > 6.0 and _last_hit_by:
+		# thrown into a skeleton: bowling!
+		(b as Enemy).take_hit(2, linear_velocity, _last_hit_by)
+		return
 	if is_crashed or _hold:
 		return
 	if not b is AnimatableBody3D or b.get_meta("ride", false):
@@ -577,16 +604,57 @@ func fling(v: Vector3) -> void:
 func hit(impulse: Vector3, by: Player = null) -> void:
 	if is_out or _hold:
 		return
+	if puppet:
+		Net.send_hit(self, impulse, by)
+		return
 	if by:
 		_last_hit_by = by
 		_last_hit_time = Time.get_ticks_msec() / 1000.0
 	_ignore_dv = 2
 	apply_central_impulse(impulse * ARC)
 	crash(impulse.length() * 2.0)
+	# hazards, enemies and rivals cost a heart; team mates' shoves don't
+	if by == null or team < 0 or by.team != team:
+		damage(1)
+
+## Something hostile (a skeleton's swing) got us.
+func enemy_hit(impulse: Vector3) -> void:
+	if _invuln > 0.0:
+		return
+	hit(impulse)
+
+## Lose `n` hearts (open world only); at 0 we're knocked out and come back
+## at the last camp with full health a moment later.
+func damage(n := 1) -> void:
+	if max_hp <= 0 or _invuln > 0.0 or is_out or hp <= 0:
+		return
+	hp = maxi(hp - n, 0)
+	_invuln = 1.3
+	hp_changed.emit(hp)
+	if is_human:
+		Input.vibrate_handheld(80)
+	if hp == 0:
+		knocked_out.emit()
+		Game.play("eliminated", 0.0, -4.0 if is_human else -14.0)
+		get_tree().create_timer(1.6).timeout.connect(func():
+			if is_inside_tree() and not is_out:
+				hp = max_hp
+				hp_changed.emit(hp)
+				respawn())
+
+func heal(n := 1) -> bool:
+	if max_hp <= 0 or hp >= max_hp or hp <= 0:
+		return false
+	hp = mini(hp + n, max_hp)
+	hp_changed.emit(hp)
+	return true
 
 ## A shove that only knocks over someone already off balance.
 func push(impulse: Vector3, by: Player = null) -> void:
 	if is_out or _hold:
+		return
+	if puppet:
+		Net.send_push(self, impulse, by)
 		return
 	_last_hit_by = by
 	_last_hit_time = Time.get_ticks_msec() / 1000.0
@@ -608,6 +676,9 @@ func fell_off() -> void:
 		knock_out()
 		return
 	Game.play("splat", 0.1, -4.0 if is_human else -16.0)
+	if max_hp > 0 and hp > 1:
+		hp -= 1
+		hp_changed.emit(hp)
 	respawn()
 
 ## Out of the round (survival): vanish and stop simulating.
@@ -773,6 +844,7 @@ func _drop_peel() -> void:
 	Fx.fade_out(area, 7.0)
 
 func _show_body(on: bool) -> void:
+	_hidden = not on
 	visual.visible = on
 	for l in _limbs:
 		for mi in Props.meshes(l):
@@ -874,11 +946,15 @@ func _update_aim() -> void:
 		return
 	var f := forward()
 	var reach := 9.0 if grabbing_player() else 15.0
-	var best: Player = null
+	var best: Node3D = null
 	var best_score := INF
-	for o in get_tree().get_nodes_in_group("players"):
-		var p := o as Player
-		if p == null or p == self or p == _grabbed or p.is_out or (team >= 0 and p.team == team):
+	for o in get_tree().get_nodes_in_group("players") + get_tree().get_nodes_in_group("enemies"):
+		var p := o as Node3D
+		if o is Player:
+			var op := o as Player
+			if op == self or op == _grabbed or op.is_out or (team >= 0 and op.team == team):
+				continue
+		elif (o as Enemy).is_dead():
 			continue
 		var locked := p == aim_target
 		var to := p.global_position - global_position
@@ -911,7 +987,8 @@ func _aim_dir() -> Vector3:
 func _throw_vel(origin: Vector3, speed: float, up: float) -> Vector3:
 	var dir := _aim_dir()
 	if aim_target and is_instance_valid(aim_target):
-		var to := aim_target.global_position + aim_target.linear_velocity * 0.15 - origin
+		var tv: Vector3 = aim_target.linear_velocity if aim_target is Player else (aim_target as Enemy).velocity
+		var to := aim_target.global_position + tv * 0.15 - origin
 		var dy := to.y
 		to.y = 0
 		var t := maxf(to.length() / speed, 0.05)
@@ -956,6 +1033,10 @@ func _release() -> void:
 			(b as Player).push(forward() * 5.5 + Vector3.UP * 1.8, self)
 			Fx.word(get_parent(), (b as Player).global_position + Vector3.UP * 0.9, ["POW!", "BAM!", "SHOVE!", "OOF!"].pick_random(), UI.YELLOW)
 			any = true
+		elif b is Enemy:
+			(b as Enemy).take_hit(1, forward(), self)
+			Fx.word(get_parent(), (b as Enemy).global_position + Vector3.UP * 1.4, ["POW!", "BAM!", "CRACK!"].pick_random(), UI.YELLOW)
+			any = true
 		elif b is RigidBody3D:
 			(b as RigidBody3D).apply_central_impulse(forward() * 3.0 + Vector3.UP * 1.0)
 			any = true
@@ -992,6 +1073,9 @@ func _use_item() -> void:
 				if b is Player and b != self:
 					(b as Player).hit(f * 8.5 + Vector3.UP * 4.0, self)
 					Fx.word(get_parent(), (b as Player).global_position + Vector3.UP * 0.9, "BONK!", UI.YELLOW, 1.1)
+					landed = true
+				elif b is Enemy:
+					(b as Enemy).take_hit(2, f, self)
 					landed = true
 			Game.play("bonk" if landed else "throw", 0.1, 0.0 if is_human else -8.0)
 	if item != "pin":

@@ -1,18 +1,23 @@
 class_name Props
-## Loads Kenney models (assets/kenney/<kit>/<name>.glb|gltf) and gives them the
-## game's candy look: the packs' muted flat colours get a saturation/brightness
-## lift and toon shading. Also: size helpers so callers can say "make this 6 m
-## long" instead of guessing scale factors.
+## Loads models and gives them the game's look. Ids are "<kit>/<name>":
+## Kenney kits live in assets/kenney/<kit>/ ("food/egg"); KayKit and
+## Quaternius packs keep their prefix ("kaykit/skeletons/Skeleton_Mage",
+## "quaternius/nature/CommonTree_1" -> assets/kaykit/..., assets/quaternius/...).
+## Kenney and KayKit's flat colours get a saturation/brightness lift and toon
+## shading; Quaternius' painted textures get soft wrapped lighting instead
+## (toon bands look harsh on leaves). Also: size helpers so callers can say
+## "make this 6 m long" instead of guessing scale factors.
 
 static var _scenes := {}
 static var _mats := {}
 static var _boxes := {}
 
 static func path(id: String) -> String:
-	var p := "res://assets/kenney/%s.glb" % id
+	var dir := "res://assets/" if id.begins_with("kaykit/") or id.begins_with("quaternius/") else "res://assets/kenney/"
+	var p := dir + id + ".glb"
 	if ResourceLoader.exists(p):
 		return p
-	return "res://assets/kenney/%s.gltf" % id
+	return dir + id + ".gltf"
 
 ## New instance of `id` ("food/egg", "nature/tree_oak", ...). The model is
 ## re-centred so its footprint is centred on x/z and its base sits at y = 0.
@@ -26,7 +31,10 @@ static func make(id: String, candy := true) -> Node3D:
 	var box := local_aabb(id, inner)
 	inner.position = -Vector3(box.get_center().x, box.position.y, box.get_center().z)
 	if candy:
-		_candy(inner)
+		if id.begins_with("quaternius/"):
+			_soft(inner)
+		else:
+			_candy(inner)
 	return root
 
 ## Instance scaled so its largest horizontal side (or `axis`) is `size` metres.
@@ -73,6 +81,28 @@ static func _candy(n: Node) -> void:
 			if m is StandardMaterial3D:
 				mi.set_surface_override_material(i, candy_mat(m))
 
+static func _soft(n: Node) -> void:
+	for mi: MeshInstance3D in meshes(n):
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		for i in mi.mesh.get_surface_count():
+			var m := mi.get_active_material(i)
+			if m is StandardMaterial3D:
+				mi.set_surface_override_material(i, soft_mat(m))
+
+## Painted-texture look (Quaternius): no specular shine, light wrapping
+## round the leaves, colours a touch deeper so the meadow isn't washed out.
+static func soft_mat(m: StandardMaterial3D) -> StandardMaterial3D:
+	if _mats.has(m):
+		return _mats[m]
+	var c := m.duplicate() as StandardMaterial3D
+	c.metallic = 0.0
+	c.roughness = 1.0
+	c.metallic_specular = 0.0
+	c.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
+	c.albedo_color = c.albedo_color * Color(0.94, 0.95, 0.9)
+	_mats[m] = c
+	return c
+
 ## Saturated, toon-shaded copy of a model material (cached).
 static func candy_mat(m: StandardMaterial3D) -> StandardMaterial3D:
 	if _mats.has(m):
@@ -112,7 +142,9 @@ static var _candy_meshes := {}
 
 ## Many copies of one model as MultiMeshes (one draw call per mesh part).
 ## `xforms` place the re-centred model (base at y = 0), like make().
-static func multi(id: String, xforms: Array) -> Node3D:
+## `shadows`: cast shadows; `vis_end` > 0: hide beyond that many metres
+## (open world: batch per area chunk so far chunks drop out).
+static func multi(id: String, xforms: Array, shadows := false, vis_end := 0.0) -> Node3D:
 	var holder := Node3D.new()
 	holder.name = "multi_" + id.get_file()
 	if xforms.is_empty():
@@ -127,25 +159,29 @@ static func multi(id: String, xforms: Array) -> Node3D:
 			p = p.get_parent()
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
-		mm.mesh = _candy_mesh(mi.mesh)
+		mm.mesh = _candy_mesh(mi.mesh, id.begins_with("quaternius/"))
 		mm.instance_count = xforms.size()
 		for i in xforms.size():
 			mm.set_instance_transform(i, xforms[i] * t)
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
-		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if shadows else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		if vis_end > 0.0:
+			mmi.visibility_range_end = vis_end
+			mmi.visibility_range_end_margin = vis_end * 0.1
+			mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 		holder.add_child(mmi)
 	probe.free()
 	return holder
 
-static func _candy_mesh(mesh: Mesh) -> Mesh:
+static func _candy_mesh(mesh: Mesh, soft := false) -> Mesh:
 	if _candy_meshes.has(mesh):
 		return _candy_meshes[mesh]
 	var m := mesh.duplicate() as Mesh
 	for i in m.get_surface_count():
 		var sm := m.surface_get_material(i)
 		if sm is StandardMaterial3D:
-			m.surface_set_material(i, candy_mat(sm))
+			m.surface_set_material(i, soft_mat(sm) if soft else candy_mat(sm))
 	_candy_meshes[mesh] = m
 	return m
 
