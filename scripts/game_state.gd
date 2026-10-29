@@ -1,13 +1,24 @@
 extends Node
-## Global state: version, sounds, slow-motion, update check.
+## Global state: version, sounds, slow-motion, settings, update check.
 
 const REPO_API := "https://api.github.com/repos/ohavs/nice-crash-/releases/latest"
 
+const SETTINGS_PATH := "user://settings.cfg"
+## Touch control centers as fractions of the screen (x, y).
+const DEFAULT_LAYOUT := {
+	"joy": Vector2(0.72, 0.82),
+	"jump": Vector2(0.19, 0.84),
+	"grab": Vector2(0.42, 0.92),
+}
+
 var sounds := {}
+var skin := "egg"
+var layout := DEFAULT_LAYOUT.duplicate()
 var _slowmo_left := 0.0
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	load_settings()
 	for s in ["jump", "land", "fall", "break", "coin", "walking"]:
 		sounds[s] = load("res://assets/kenney/sounds/%s.ogg" % s)
 
@@ -16,6 +27,27 @@ func build() -> int:
 
 func version_text() -> String:
 	return "v%s (build %d)" % [ProjectSettings.get_setting("application/config/version"), build()]
+
+func load_settings() -> void:
+	var cfg := ConfigFile.new()
+	if cfg.load(SETTINGS_PATH) != OK:
+		return
+	skin = cfg.get_value("game", "skin", skin)
+	for k in DEFAULT_LAYOUT:
+		var v = cfg.get_value("controls", k, DEFAULT_LAYOUT[k])
+		if v is Vector2:
+			layout[k] = v.clamp(Vector2.ZERO, Vector2.ONE)
+
+func save_settings() -> void:
+	var cfg := ConfigFile.new()
+	cfg.set_value("game", "skin", skin)
+	for k in layout:
+		cfg.set_value("controls", k, layout[k])
+	cfg.save(SETTINGS_PATH)
+
+func reset_layout() -> void:
+	layout = DEFAULT_LAYOUT.duplicate()
+	save_settings()
 
 func play(name: String, pitch_jitter := 0.15, volume_db := 0.0) -> void:
 	if not sounds.has(name):

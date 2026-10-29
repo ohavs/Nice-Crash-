@@ -1,37 +1,57 @@
 class_name TouchControls
 extends Control
-## Floating joystick on the left half, JUMP + GRAB buttons on the right.
-## Keyboard fallback for PC testing: WASD/arrows, Space, E/Shift.
+## Floating joystick + JUMP / GRAB buttons. Positions come from Game.layout
+## (fractions of the screen) and can be dragged around in edit mode.
+## A touch that misses the buttons drives the joystick if it is closer to the
+## joystick's home than to any button. Keyboard fallback for PC testing:
+## WASD/arrows, Space, E/Shift.
+
+signal layout_changed
+
+const JOY_RADIUS := 105.0
+const KNOB_RADIUS := 46.0
 
 var move := Vector2.ZERO
 var jump_pressed := false
 var grab_held := false
+var edit_mode := false
 
 var _joy_index := -1
 var _joy_origin := Vector2.ZERO
 var _joy_pos := Vector2.ZERO
 var _kb := false
 var _btn_touch := {}   # touch index -> "jump"/"grab"
-const JOY_RADIUS := 110.0
+var _drag := {}        # edit mode: touch index -> [item, grab offset]
 
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 
-func _buttons() -> Dictionary:
+func _btn_radius() -> float:
 	var s := get_viewport_rect().size
-	var r := clampf(s.y * 0.11, 55.0, 95.0)
+	return clampf(minf(s.x, s.y) * 0.13, 55.0, 100.0)
+
+## item -> [center, radius]
+func _items() -> Dictionary:
+	var s := get_viewport_rect().size
+	var r := _btn_radius()
 	return {
-		"jump": [Vector2(s.x - r * 1.5, s.y - r * 1.6), r],
-		"grab": [Vector2(s.x - r * 3.7, s.y - r * 1.0), r * 0.8],
+		"jump": [Game.layout.jump * s, r],
+		"grab": [Game.layout.grab * s, r * 0.8],
+		"joy": [Game.layout.joy * s, JOY_RADIUS],
 	}
 
 func _input(event: InputEvent) -> void:
+	if not is_visible_in_tree():
+		return
+	if edit_mode:
+		_edit_input(event)
+		return
+	var items := _items()
 	if event is InputEventScreenTouch:
 		if event.pressed:
-			for b in _buttons():
-				var d: Array = _buttons()[b]
-				if event.position.distance_to(d[0]) < d[1] * 1.25:
+			for b in ["jump", "grab"]:
+				if event.position.distance_to(items[b][0]) < items[b][1] * 1.25:
 					_btn_touch[event.index] = b
 					if b == "jump":
 						jump_pressed = true
@@ -39,7 +59,7 @@ func _input(event: InputEvent) -> void:
 						grab_held = true
 					queue_redraw()
 					return
-			if event.position.x < get_viewport_rect().size.x * 0.5 and _joy_index == -1:
+			if _joy_index == -1 and _closest(event.position, items) == "joy":
 				_joy_index = event.index
 				_joy_origin = event.position
 				_joy_pos = event.position
@@ -59,6 +79,44 @@ func _input(event: InputEvent) -> void:
 			_joy_origin = _joy_pos - d.normalized() * JOY_RADIUS  # follow finger
 		move = (_joy_pos - _joy_origin) / JOY_RADIUS
 		queue_redraw()
+
+func _closest(p: Vector2, items: Dictionary) -> String:
+	var best := ""
+	var best_d := INF
+	for k in items:
+		# distance to the item's edge, so the big joystick zone isn't penalised
+		var d: float = p.distance_to(items[k][0]) - items[k][1]
+		if d < best_d:
+			best_d = d
+			best = k
+	return best
+
+func _edit_input(event: InputEvent) -> void:
+	var s := get_viewport_rect().size
+	if event is InputEventScreenTouch:
+		if event.pressed:
+			var items := _items()
+			for k in ["jump", "grab", "joy"]:
+				if event.position.distance_to(items[k][0]) < items[k][1] * 1.1:
+					_drag[event.index] = [k, items[k][0] - event.position]
+					break
+		elif _drag.has(event.index):
+			_drag.erase(event.index)
+			layout_changed.emit()
+	elif event is InputEventScreenDrag and _drag.has(event.index):
+		var k: String = _drag[event.index][0]
+		var r: float = _items()[k][1]
+		var p: Vector2 = (event.position + _drag[event.index][1]).clamp(Vector2(r, r), s - Vector2(r, r))
+		Game.layout[k] = p / s
+		queue_redraw()
+
+func release_all() -> void:
+	_joy_index = -1
+	move = Vector2.ZERO
+	grab_held = false
+	_btn_touch.clear()
+	_drag.clear()
+	queue_redraw()
 
 func read_keyboard() -> void:
 	if _joy_index != -1:
@@ -85,24 +143,57 @@ func consume_jump() -> bool:
 	jump_pressed = false
 	return j
 
+# ---------------------------------------------------------------- drawing
+
 func _draw() -> void:
-	if _joy_index != -1:
-		draw_circle(_joy_origin, JOY_RADIUS, Color(1, 1, 1, 0.15))
-		draw_arc(_joy_origin, JOY_RADIUS, 0, TAU, 48, Color(1, 1, 1, 0.5), 4.0, true)
-		var knob := _joy_origin + (_joy_pos - _joy_origin).limit_length(JOY_RADIUS)
-		draw_circle(knob, 44, Color(1, 1, 1, 0.75))
-	var font := ThemeDB.fallback_font
-	var cols := {"jump": Color("ffd23f"), "grab": Color("4ecdc4")}
+	var items := _items()
+	var font := UI.font()
+	# joystick: live where the thumb is, ghost at home otherwise
+	var joy_active := _joy_index != -1 and not edit_mode
+	var origin: Vector2 = _joy_origin if joy_active else items.joy[0]
+	var knob := origin + (_joy_pos - _joy_origin).limit_length(JOY_RADIUS) if joy_active else origin
+	var a := 1.0 if joy_active or edit_mode else 0.45
+	draw_circle(origin, JOY_RADIUS + 6, Color(UI.INK, 0.28 * a))
+	draw_circle(origin, JOY_RADIUS, Color(1, 1, 1, 0.14 * a))
+	draw_arc(origin, JOY_RADIUS - 3, 0, TAU, 64, Color(1, 1, 1, 0.7 * a), 6.0, true)
+	for i in 4:  # direction ticks
+		var dir := Vector2.RIGHT.rotated(i * PI * 0.5)
+		draw_line(origin + dir * (JOY_RADIUS - 22), origin + dir * (JOY_RADIUS - 12), Color(1, 1, 1, 0.6 * a), 6.0, true)
+	if joy_active or edit_mode:
+		draw_style_box(ChunkyStyle.new(UI.WHITE, KNOB_RADIUS, 7.0), Rect2(knob - Vector2.ONE * KNOB_RADIUS, Vector2.ONE * KNOB_RADIUS * 2))
+	else:
+		draw_circle(knob, KNOB_RADIUS, Color(1, 1, 1, 0.5))
+	# buttons
+	var cols := {"jump": UI.YELLOW, "grab": UI.TEAL}
 	var labels := {"jump": "JUMP", "grab": "GRAB"}
-	for b in _buttons():
-		var d: Array = _buttons()[b]
-		var held: bool = b in _btn_touch.values()
-		draw_circle(d[0] + Vector2(0, 6), d[1], Color(0, 0, 0, 0.35))
-		draw_circle(d[0] + (Vector2(0, 4) if held else Vector2.ZERO), d[1], cols[b].darkened(0.2 if held else 0.0))
-		draw_arc(d[0], d[1], 0, TAU, 48, Color(0.08, 0.06, 0.1), 5.0, true)
-		var fs := int(d[1] * 0.38)
-		var tw := font.get_string_size(labels[b], HORIZONTAL_ALIGNMENT_CENTER, -1, fs).x
-		draw_string(font, d[0] + Vector2(-tw * 0.5, fs * 0.35), labels[b], HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(0.08, 0.06, 0.1))
+	for b in ["jump", "grab"]:
+		var c: Vector2 = items[b][0]
+		var r: float = items[b][1]
+		var held: bool = b in _btn_touch.values() or (b == "grab" and grab_held)
+		var st := ChunkyStyle.new(cols[b], r, clampf(r * 0.14, 6.0, 12.0), held)
+		var rect := Rect2(c - Vector2(r, r), Vector2(r, r) * 2.0)
+		draw_style_box(st, rect)
+		var sink := st.depth * 0.8 if held else 0.0
+		var body_c := c + Vector2(0, sink - st.depth * 0.5)
+		var isz := r * 0.72
+		draw_texture_rect(UI.icon(b), Rect2(body_c - Vector2(isz * 0.5, isz * 0.72), Vector2(isz, isz)), false)
+		var fs := int(r * 0.3)
+		var tw := font.get_string_size(labels[b], HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+		var tp := body_c + Vector2(-tw * 0.5, isz * 0.28 + fs * 0.75)
+		draw_string_outline(font, tp, labels[b], HORIZONTAL_ALIGNMENT_LEFT, -1, fs, int(fs * 0.4), UI.INK)
+		draw_string(font, tp, labels[b], HORIZONTAL_ALIGNMENT_LEFT, -1, fs, UI.WHITE)
+	if edit_mode:
+		for k in items:
+			var c: Vector2 = items[k][0]
+			var r: float = items[k][1] + 12.0
+			_dashed_ring(c, r, k in _drag.values().map(func(v): return v[0]))
+
+func _dashed_ring(c: Vector2, r: float, active: bool) -> void:
+	var n := 24
+	var col := UI.YELLOW if active else Color(1, 1, 1, 0.9)
+	for i in n:
+		var a0 := i * TAU / n
+		draw_arc(c, r, a0, a0 + TAU / n * 0.55, 6, col, 5.0, true)
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_RESIZED:
