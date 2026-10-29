@@ -4,17 +4,25 @@
 
 ## Core
 - Engine: Godot 4.6, Jolt physics, Mobile renderer, portrait. Android first; Google Play Games on PC later.
-- View: top-back follow camera. Controls: floating joystick (right), JUMP + GRAB (left) by default; every control can be dragged anywhere in Settings → Controls layout (saved to `user://settings.cfg`).
+- View: top-back follow camera. Controls: floating joystick (right), JUMP + GRAB (left) by default; every control can be dragged anywhere and resized (70-140%) in Settings → Controls layout (saved to `user://settings.cfg`). The joystick base only slides ~30% of its radius towards the thumb.
+- Pace: 1.5x gravity, with jump / fling / knock speeds scaled by sqrt(1.5): same arcs, ~20% quicker. Run 6.8 m/s, quick recovery after a crash.
 - Character: RigidBody kept upright by a PD controller; hard impact (dv > threshold) or hazard hit → **crash** (full ragdoll, floppy limbs on pin joints) → auto-recover.
 - GRAB: pin joint to whatever is in front (ledges, crates, later other players).
 
 ## Now
-- 5 food skins from the Kenney Food Kit: Eggbert (egg), Toasty (bread slice), Donny (donut), Burgz, Cuppy.
+- 6 food skins: Eggbert (egg), Toasty (bread slice), Donny (donut), Nana (banana), Burgz, Cuppy. Egg, donut and banana are smooth
+  hand-built meshes (`scripts/food_mesh.gd`: the kit's versions are 6-8 sided gems up close); the rest are Kenney Food Kit models.
+  - Faces: googly eyes whose pupils slosh with every bump, blinking, brows + mouth by mood (happy / angry when grabbing or
+    shoving / scared when flying / dizzy spinning pupils when crashed), blush.
+  - Banana drops a peel when it crashes (60%): the next one to step on it slips and goes flying ("SLIP!"). Pops out of a fruit bowl.
   - Egg cracks on every crash (overlay textures), the 3rd crack bursts it: shell halves fly, a fried egg lands, a fresh egg pops out of an egg cup.
   - Toast pops out of a toaster (with a ding) on every (re)spawn and gets darker with each crash.
   - Everyone else pops off a plate.
 - Countdown READY/SET/GO with everyone waiting in their spawner.
 - Combat / friendly fire: ACT button = PUSH (shove), or use the held item; grab someone + ACT = YEET them.
+  Throws wind up (lean back, item / victim hoisted overhead) then snap forward with a swoosh; hits pop comic words (POW!, YEET!, SPLAT!).
+  Aim assist: holding something throwable, the nearest player within ~20 deg in front gets a lock-on marker (ring + arrow); the lock
+  is sticky (holds to ~35 deg) and throws go to the target, items on a solved arc.
   Items from present boxes: tomatoes (throw x3), cookie blaster (shoot x5), watermelon (heavy throw), rolling pin (melee x3).
 - Enemies: veggie brawlers (broccoli / eggplant / carrot / snowman) guard areas and bonk players; pirate cannons aim at the nearest player; rolling giant tomatoes / barrels; toy trains.
 - Camera follows the level's route as it turns; drag the top half of the screen to look around (eases back while you run).

@@ -297,9 +297,15 @@ func _open_editor() -> void:
 	var hint := UI.plate("DRAG TO MOVE", UI.TEAL, 40, "grab")
 	hint.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	vb.add_child(hint)
-	var tip := UI.label("Joystick, JUMP and GRAB\ncan go anywhere you like", 28)
+	var tip := UI.label("Drag controls anywhere.\nTap one, then resize it:", 28)
 	tip.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vb.add_child(tip)
+	var size_row := HBoxContainer.new()
+	size_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	size_row.add_theme_constant_override("separation", 18)
+	size_row.add_child(UI.button("-  SMALLER", UI.TEAL, 32, func(): tc.resize_selected(-0.1)))
+	size_row.add_child(UI.button("+  BIGGER", UI.TEAL, 32, func(): tc.resize_selected(0.1)))
+	vb.add_child(size_row)
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 18)

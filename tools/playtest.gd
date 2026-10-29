@@ -21,6 +21,8 @@ func _setup() -> void:
 	var a := OS.get_cmdline_user_args()
 	var game := root.get_node("Game")
 	game.play_mode = a[0] if a.size() > 0 else "adventure"
+	if OS.has_environment("PT_SKIN"):
+		game.skin = OS.get_environment("PT_SKIN")  # e.g. PT_SKIN=banana
 	if game.play_mode == "party":
 		game.party_id = a[1] if a.size() > 1 else "waffle"
 		game.party_bots = int(a[2]) if a.size() > 2 else 3

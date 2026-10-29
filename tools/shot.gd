@@ -27,6 +27,8 @@ func _setup() -> void:
 		_stage = 10
 		return
 	game.play_mode = a[0]
+	if OS.has_environment("PT_SKIN"):
+		game.skin = OS.get_environment("PT_SKIN")
 	game.bots = 4
 	game.party_bots = 4
 	if a[0] == "party":

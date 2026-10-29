@@ -11,6 +11,9 @@ signal layout_changed
 
 const JOY_RADIUS := 105.0
 const KNOB_RADIUS := 46.0
+## How far (fraction of its radius) the joystick base may slide away from
+## its home spot to meet the thumb: a little give, not a wandering stick.
+const JOY_DRIFT := 0.3
 
 var move := Vector2.ZERO
 var jump_pressed := false
@@ -29,6 +32,8 @@ var _btn_touch := {}   # touch index -> "jump"/"grab"/"act"
 var _look_index := -1
 var _look := 0.0
 var _drag := {}        # edit mode: touch index -> [item, grab offset]
+## Edit mode: the control the size buttons act on.
+var selected := "jump"
 
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -38,16 +43,29 @@ func _btn_radius() -> float:
 	var s := get_viewport_rect().size
 	return clampf(minf(s.x, s.y) * 0.13, 55.0, 100.0)
 
+func _joy_r() -> float:
+	return JOY_RADIUS * Game.sizes.joy
+
 ## item -> [center, radius]
 func _items() -> Dictionary:
 	var s := get_viewport_rect().size
 	var r := _btn_radius()
 	return {
-		"jump": [Game.layout.jump * s, r],
-		"grab": [Game.layout.grab * s, r * 0.8],
-		"act": [Game.layout.act * s, r * 0.8],
-		"joy": [Game.layout.joy * s, JOY_RADIUS],
+		"jump": [Game.layout.jump * s, r * Game.sizes.jump],
+		"grab": [Game.layout.grab * s, r * 0.8 * Game.sizes.grab],
+		"act": [Game.layout.act * s, r * 0.8 * Game.sizes.act],
+		"joy": [Game.layout.joy * s, _joy_r()],
 	}
+
+## Edit mode: grow / shrink the selected control by `step`, within limits.
+func resize_selected(step: float) -> void:
+	Game.sizes[selected] = clampf(snappedf(Game.sizes[selected] + step, 0.05), Game.SIZE_MIN, Game.SIZE_MAX)
+	# keep it on screen at its new size
+	var s := get_viewport_rect().size
+	var r: float = _items()[selected][1]
+	Game.layout[selected] = (Game.layout[selected] * s).clamp(Vector2(r, r), s - Vector2(r, r)) / s
+	layout_changed.emit()
+	queue_redraw()
 
 func _input(event: InputEvent) -> void:
 	if not is_visible_in_tree():
@@ -69,14 +87,16 @@ func _input(event: InputEvent) -> void:
 						grab_held = true
 					queue_redraw()
 					return
-			var near_joy: bool = event.position.distance_to(items.joy[0]) < JOY_RADIUS * 1.6
+			var near_joy: bool = event.position.distance_to(items.joy[0]) < _joy_r() * 1.6
 			if _look_index == -1 and not near_joy and event.position.y < get_viewport_rect().size.y * 0.5:
 				_look_index = event.index
 				return
 			if _joy_index == -1 and _closest(event.position, items) == "joy":
 				_joy_index = event.index
-				_joy_origin = event.position
+				var home: Vector2 = items.joy[0]
+				_joy_origin = home + (event.position - home).limit_length(_joy_r() * JOY_DRIFT)
 				_joy_pos = event.position
+				move = ((_joy_pos - _joy_origin) / _joy_r()).limit_length(1.0)
 		else:
 			if event.index == _look_index:
 				_look_index = -1
@@ -92,10 +112,13 @@ func _input(event: InputEvent) -> void:
 		_look += event.relative.x
 	elif event is InputEventScreenDrag and event.index == _joy_index:
 		_joy_pos = event.position
+		var jr := _joy_r()
 		var d: Vector2 = _joy_pos - _joy_origin
-		if d.length() > JOY_RADIUS:
-			_joy_origin = _joy_pos - d.normalized() * JOY_RADIUS  # follow finger
-		move = (_joy_pos - _joy_origin) / JOY_RADIUS
+		if d.length() > jr:
+			# follow the finger a little, but never far from home
+			var home: Vector2 = Game.layout.joy * get_viewport_rect().size
+			_joy_origin = home + (_joy_pos - d.normalized() * jr - home).limit_length(jr * JOY_DRIFT)
+		move = ((_joy_pos - _joy_origin) / jr).limit_length(1.0)
 		queue_redraw()
 
 func _closest(p: Vector2, items: Dictionary) -> String:
@@ -117,6 +140,8 @@ func _edit_input(event: InputEvent) -> void:
 			for k in ["jump", "grab", "act", "joy"]:
 				if event.position.distance_to(items[k][0]) < items[k][1] * 1.1:
 					_drag[event.index] = [k, items[k][0] - event.position]
+					selected = k
+					queue_redraw()
 					break
 		elif _drag.has(event.index):
 			_drag.erase(event.index)
@@ -190,18 +215,20 @@ func _draw() -> void:
 	# joystick: live where the thumb is, ghost at home otherwise
 	var joy_active := _joy_index != -1 and not edit_mode
 	var origin: Vector2 = _joy_origin if joy_active else items.joy[0]
-	var knob := origin + (_joy_pos - _joy_origin).limit_length(JOY_RADIUS) if joy_active else origin
+	var jr := _joy_r()
+	var kr: float = KNOB_RADIUS * Game.sizes.joy
+	var knob := origin + (_joy_pos - _joy_origin).limit_length(jr) if joy_active else origin
 	var a := 1.0 if joy_active or edit_mode else 0.45
-	draw_circle(origin, JOY_RADIUS + 6, Color(UI.INK, 0.28 * a))
-	draw_circle(origin, JOY_RADIUS, Color(1, 1, 1, 0.14 * a))
-	draw_arc(origin, JOY_RADIUS - 3, 0, TAU, 64, Color(1, 1, 1, 0.7 * a), 6.0, true)
+	draw_circle(origin, jr + 6, Color(UI.INK, 0.28 * a))
+	draw_circle(origin, jr, Color(1, 1, 1, 0.14 * a))
+	draw_arc(origin, jr - 3, 0, TAU, 64, Color(1, 1, 1, 0.7 * a), 6.0, true)
 	for i in 4:  # direction ticks
 		var dir := Vector2.RIGHT.rotated(i * PI * 0.5)
-		draw_line(origin + dir * (JOY_RADIUS - 22), origin + dir * (JOY_RADIUS - 12), Color(1, 1, 1, 0.6 * a), 6.0, true)
+		draw_line(origin + dir * (jr - 22), origin + dir * (jr - 12), Color(1, 1, 1, 0.6 * a), 6.0, true)
 	if joy_active or edit_mode:
-		draw_style_box(ChunkyStyle.new(UI.WHITE, KNOB_RADIUS, 7.0), Rect2(knob - Vector2.ONE * KNOB_RADIUS, Vector2.ONE * KNOB_RADIUS * 2))
+		draw_style_box(ChunkyStyle.new(UI.WHITE, kr, 7.0), Rect2(knob - Vector2.ONE * kr, Vector2.ONE * kr * 2))
 	else:
-		draw_circle(knob, KNOB_RADIUS, Color(1, 1, 1, 0.5))
+		draw_circle(knob, kr, Color(1, 1, 1, 0.5))
 	# buttons
 	var cols := {"jump": UI.YELLOW, "grab": UI.TEAL, "act": UI.CORAL if act_label == "PUSH" else UI.GRAPE}
 	var labels := {"jump": "JUMP", "grab": "GRAB", "act": act_label}
@@ -233,7 +260,16 @@ func _draw() -> void:
 		for k in items:
 			var c: Vector2 = items[k][0]
 			var r: float = items[k][1] + 12.0
-			_dashed_ring(c, r, k in _drag.values().map(func(v): return v[0]))
+			_dashed_ring(c, r, k == selected or k in _drag.values().map(func(v): return v[0]))
+			if k == selected:
+				var pct := "%d%%" % roundi(Game.sizes[k] * 100.0)
+				var fs := 30
+				var tw := font.get_string_size(pct, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+				# under the control (above it if that's off screen)
+				var below := c.y + r + 46 < get_viewport_rect().size.y
+				var tp := c + Vector2(-tw * 0.5, r + 42 if below else -r - 14)
+				draw_string_outline(font, tp, pct, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 10, UI.INK)
+				draw_string(font, tp, pct, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, UI.YELLOW)
 
 func _dashed_ring(c: Vector2, r: float, active: bool) -> void:
 	var n := 24

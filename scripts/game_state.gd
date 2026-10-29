@@ -15,6 +15,10 @@ const DEFAULT_LAYOUT := {
 var sounds := {}
 var skin := "egg"
 var layout := DEFAULT_LAYOUT.duplicate()
+## Touch control size multipliers (SIZE_MIN..SIZE_MAX), same keys as layout.
+const SIZE_MIN := 0.7
+const SIZE_MAX := 1.4
+var sizes := {"joy": 1.0, "jump": 1.0, "grab": 1.0, "act": 1.0}
 ## "adventure" (world levels) or "party" (minigames).
 var play_mode := "adventure"
 var level_id := "meadow"
@@ -68,6 +72,7 @@ func load_settings() -> void:
 		var v = cfg.get_value("controls", k, DEFAULT_LAYOUT[k])
 		if v is Vector2:
 			layout[k] = v.clamp(Vector2.ZERO, Vector2.ONE)
+		sizes[k] = clampf(float(cfg.get_value("control_sizes", k, 1.0)), SIZE_MIN, SIZE_MAX)
 
 func save_settings() -> void:
 	var cfg := ConfigFile.new()
@@ -81,6 +86,7 @@ func save_settings() -> void:
 	cfg.set_value("progress", "stars", stars)
 	for k in layout:
 		cfg.set_value("controls", k, layout[k])
+		cfg.set_value("control_sizes", k, sizes[k])
 	cfg.save(SETTINGS_PATH)
 
 ## Records a finished adventure level: best stars, unlocks the next one.
@@ -97,6 +103,8 @@ func total_stars() -> int:
 
 func reset_layout() -> void:
 	layout = DEFAULT_LAYOUT.duplicate()
+	for k in sizes:
+		sizes[k] = 1.0
 	save_settings()
 
 func play(name: String, pitch_jitter := 0.15, volume_db := 0.0) -> void:

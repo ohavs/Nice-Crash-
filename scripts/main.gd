@@ -42,6 +42,11 @@ var _cam_pos := Vector3.ZERO
 var _cam_yaw := 0.0
 var _look_yaw := 0.0
 var _cam_offset := Vector3(0, 6.4, 8.2)
+var _aim_marker: Node3D
+var _aim_ring: MeshInstance3D
+var _aim_arrow: MeshInstance3D
+var _aim_last: Player
+var _aim_t := 0.0
 
 func _ready() -> void:
 	play_mode = Game.play_mode
@@ -78,6 +83,7 @@ func _ready() -> void:
 	cam.global_position = _cam_pos
 	cam.look_at(player.global_position)
 	_build_hud()
+	_build_aim_marker()
 	_countdown()
 
 func _bot_count() -> int:
@@ -153,7 +159,7 @@ func _spawn_guards() -> void:
 		var p := Player.new()
 		p.skin = g[2]
 		p.is_enemy = true
-		p.move_speed = 4.6
+		p.move_speed = 5.6
 		p.kill_y = level.kill_y
 		add_child(p)
 		p.global_position = g[0]
@@ -343,6 +349,64 @@ func _process(delta: float) -> void:
 	cam.global_position = _cam_pos + off
 	var yb := Basis(Vector3.UP, _cam_yaw + _look_yaw)
 	cam.look_at(_focus() + yb * Vector3(0, 0.6, -2.6))
+	_update_aim_marker(real_dt)
+
+## Lock-on marker for throws: a ring at the target's feet and an arrow over
+## its head (seen through walls), popping in when the lock changes.
+func _build_aim_marker() -> void:
+	_aim_marker = Node3D.new()
+	_aim_marker.visible = false
+	add_child(_aim_marker)
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.no_depth_test = true
+	m.render_priority = 3
+	m.albedo_color = Color(UI.CORAL, 0.85)
+	_aim_ring = MeshInstance3D.new()
+	var tm := TorusMesh.new()
+	tm.inner_radius = 0.5
+	tm.outer_radius = 0.62
+	tm.rings = 32
+	tm.ring_segments = 6
+	_aim_ring.mesh = tm
+	_aim_ring.scale = Vector3(1, 0.3, 1)
+	_aim_ring.material_override = m
+	_aim_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_aim_marker.add_child(_aim_ring)
+	_aim_arrow = MeshInstance3D.new()
+	var cm := CylinderMesh.new()
+	cm.top_radius = 0.2
+	cm.bottom_radius = 0.0
+	cm.height = 0.32
+	cm.radial_segments = 4
+	_aim_arrow.mesh = cm
+	_aim_arrow.material_override = m
+	_aim_arrow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_aim_marker.add_child(_aim_arrow)
+
+func _update_aim_marker(real_dt: float) -> void:
+	var t := player.aim_target
+	if t == null or not is_instance_valid(t) or _over:
+		_aim_marker.visible = false
+		_aim_last = null
+		return
+	if t != _aim_last:
+		_aim_last = t
+		_aim_t = 0.0
+		Game.play("pop", 0.05, -16.0)
+	_aim_t += real_dt
+	_aim_marker.visible = true
+	_aim_marker.global_position = t.global_position
+	# pops in big and settles, then breathes gently
+	var pop := 1.0 + maxf(0.0, 0.35 - _aim_t) * 2.0
+	var s := pop * (1.0 + sin(_aim_t * 7.0) * 0.06)
+	_aim_ring.position.y = -0.55
+	_aim_ring.scale = Vector3(s, 0.3, s)
+	_aim_ring.rotation.y = _aim_t * 1.5
+	_aim_arrow.position.y = 1.35 + absf(sin(_aim_t * 5.0)) * 0.15
+	_aim_arrow.rotation.y = _aim_t * 3.0
+	_aim_arrow.scale = Vector3.ONE * pop
 
 func _focus() -> Vector3:
 	if player.is_out:

@@ -18,9 +18,10 @@ signal bonked(victim: Player, how: String)
 signal item_changed(item: String, ammo: int)
 
 const SKINS := {
-	"egg": {"model": "food/egg", "name": "Eggbert", "height": 1.25, "tint": Color("fff0d2"), "tint_amt": 0.75, "pod": "food/eggCup"},
+	"egg": {"model": "food/egg", "custom": "egg", "name": "Eggbert", "height": 1.25, "width": 0.98, "pod": "food/eggCup"},
 	"toast": {"model": "food/bread", "name": "Toasty", "height": 1.2, "stand": true, "turn": true, "thick": 3.2, "pod": "furniture/toaster"},
-	"donut": {"model": "food/donutSprinkles", "name": "Donny", "height": 1.15, "stand": true, "thick": 1.4, "pod": "food/plate"},
+	"donut": {"model": "food/donutSprinkles", "custom": "donut", "name": "Donny", "height": 1.2, "depth": 0.5, "eye_y": 0.8, "mouth": false, "pod": "food/plate"},
+	"banana": {"model": "food/banana", "custom": "banana", "name": "Nana", "height": 1.3, "eye_y": 0.68, "pod": "food/bowl"},
 	"burger": {"model": "food/burger", "name": "Burgz", "height": 1.1, "pod": "food/plate"},
 	"cupcake": {"model": "food/cupcake", "name": "Cuppy", "height": 1.25, "pod": "food/plate"},
 }
@@ -38,10 +39,23 @@ const ITEMS := {
 	"pin": {"model": "food/rollingPin", "ammo": 3, "label": "BONK"},
 }
 
+## Snappier than real life: 1.5x gravity, with jump/fling/knock speeds
+## scaled by sqrt(1.5) so every arc keeps its shape (same jump heights and
+## gap distances) but plays out ~20% faster.
+const GRAV := 1.5
+const ARC := 1.2247
+## Throws lean back this long before they let go.
+const WINDUP := 0.16
+## Face by mood (see _animate_face).
+const BROW_TILT := {"happy": -0.12, "angry": 0.5, "scared": -0.4, "dizzy": -0.3}
+const BROW_LIFT := {"happy": 0.0, "angry": -0.25, "scared": 0.45, "dizzy": 0.3}
+const MOUTH_SHAPE := {"happy": Vector3(1.0, 0.75, 0.3), "angry": Vector3(1.15, 0.35, 0.3),
+	"scared": Vector3(0.7, 1.5, 0.3), "dizzy": Vector3(0.9, 1.1, 0.3)}
+
 @export var skin := "egg"
-@export var move_speed := 5.5
-@export var jump_speed := 6.8
-@export var crash_threshold := 8.0
+@export var move_speed := 6.8
+@export var jump_speed := 8.3
+@export var crash_threshold := 9.8
 
 var display_name := ""
 var is_human := false
@@ -93,9 +107,25 @@ var _last_hit_by: Player
 var _last_hit_time := -10.0
 var _pod: Node3D
 var _crack_mats: Array = []
+var _eye_r := 0.12
+var _eyes: Array[MeshInstance3D] = []
+var _pupils: Array[MeshInstance3D] = []
+var _brows: Array[Node3D] = []
+var _mouth: MeshInstance3D
+var _pupil_off := Vector2.ZERO
+var _pupil_vel := Vector2.ZERO
+var _face_prev_v := Vector3.ZERO
+var _blink := 0.0
+var _blink_in := 2.0
+var _dizzy := 0.0
+var _windup := 0.0
+var _peel: Node3D
+## Locked-on throw target (human only, see _update_aim).
+var aim_target: Player
 
 func _ready() -> void:
 	mass = 1.0
+	gravity_scale = GRAV
 	can_sleep = false
 	contact_monitor = true
 	max_contacts_reported = 4
@@ -135,6 +165,31 @@ func _build_visual() -> void:
 	var data := skin_data(skin)
 	if display_name == "":
 		display_name = data.name
+	var h: float = data.height
+	var eye_frac: float = data.get("eye_y", 0.62)
+	match data.get("custom", ""):
+		"egg":
+			var w: float = data.width
+			_body_model = FoodMesh.egg(h, w)
+			_body_model.position.y = -0.575
+			visual.add_child(_body_model)
+			# the shell curves away: eyes sit on the surface at their height
+			_add_face(FoodMesh.egg_front(eye_frac, w), w, h, eye_frac, true)
+			return
+		"banana":
+			_body_model = FoodMesh.banana(h)
+			_body_model.position.y = -0.575
+			visual.add_child(_body_model)
+			var r := FoodMesh.banana_radius(eye_frac) * h
+			_add_face(r, r * 2.6, h, eye_frac, true, true, Vector3(FoodMesh.banana_bow(eye_frac) * h, 0, 0))
+			return
+		"donut":
+			var d: float = data.depth
+			_body_model = FoodMesh.donut(h, d)
+			_body_model.position.y = -0.575
+			visual.add_child(_body_model)
+			_add_face(d * 0.62, h * 0.75, h, eye_frac, true, false)
+			return
 	var id: String = data.model
 	_body_model = Props.make(id)
 	Props.smooth(_body_model)
@@ -142,9 +197,9 @@ func _build_visual() -> void:
 	var stand: bool = data.get("stand", false)
 	var turn: bool = data.get("turn", false)  # crust is on the model's -x side: roll it to the top
 	var tall: float = (size.x if turn else size.z) if stand else size.y
-	var s: float = data.height / tall
+	var s: float = h / tall
 	if stand:
-		# lying models (bread slice, donut) stand up like a coin, face forward
+		# lying models (bread slice) stand up like a coin, face forward
 		# (-90 deg about X: model z becomes height, model y becomes depth)
 		var thick: float = data.get("thick", 1.0)
 		var b := Basis(Vector3.RIGHT, -PI * 0.5)
@@ -152,7 +207,7 @@ func _build_visual() -> void:
 			b = Basis(Vector3.BACK, -PI * 0.5) * b
 		_body_model.basis = b.scaled(Vector3(s, s, s * thick))
 		_body_model.get_child(0).position.y -= size.y * 0.5  # centre the depth
-		_body_model.position.y = -0.575 + data.height * 0.5
+		_body_model.position.y = -0.575 + h * 0.5
 	else:
 		_body_model.scale = Vector3.ONE * s
 		_body_model.position.y = -0.575
@@ -164,40 +219,107 @@ func _build_visual() -> void:
 	var depth: float = (size.y * s * data.get("thick", 1.0)) if stand else size.z * s
 	var width: float = (size.z if turn else size.x) * s
 	if not data.get("noface", false):
-		_add_face(depth * 0.5, width, data.height)
+		_add_face(depth * 0.5, width, h, eye_frac, false, data.get("mouth", true))
 
-func _add_face(front: float, width: float, height: float) -> void:
-	var eye_r := clampf(width * 0.13, 0.09, 0.14)
-	var eye_y := -0.575 + height * 0.62
+## Googly eyes (pupils slosh around with every bump, see _animate_face),
+## brows and a mouth that change with the mood, blush. `round`: the front
+## curves back towards the sides (egg), so side features sink in.
+func _add_face(front: float, width: float, height: float, eye_frac := 0.62, round := false, mouth := true, shift := Vector3.ZERO) -> void:
+	var eye_r := clampf(width * 0.16, 0.1, 0.15)
+	_eye_r = eye_r
+	var eye_y := -0.575 + height * eye_frac
+	var surf := func(x: float) -> float:
+		return sqrt(maxf(front * front - x * x, 0.0)) if round else front
 	for side in [-1, 1]:
+		var x: float = eye_r * 1.12 * side
 		var white := MeshInstance3D.new()
 		var ws := SphereMesh.new()
 		ws.radius = eye_r
 		ws.height = eye_r * 2.0
 		white.mesh = ws
+		white.scale = Vector3(1, 1, 0.55)
 		white.material_override = Toon.mat(Color.WHITE)
 		white.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		white.position = Vector3(eye_r * 1.25 * side, eye_y, -front - eye_r * 0.35)
+		white.position = Vector3(x, eye_y, -surf.call(x) - eye_r * 0.1) + shift
 		visual.add_child(white)
+		_eyes.append(white)
 		var pupil := MeshInstance3D.new()
 		var ps := SphereMesh.new()
-		ps.radius = eye_r * 0.46
-		ps.height = eye_r * 0.92
+		ps.radius = eye_r * 0.48
+		ps.height = eye_r * 0.96
 		pupil.mesh = ps
+		pupil.scale = Vector3(1, 1, 0.5)
 		pupil.material_override = Toon.unshaded(Color(0.05, 0.05, 0.08))
 		pupil.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		pupil.position = Vector3(0.0, 0.0, -eye_r * 0.7)
+		pupil.position = Vector3(0.0, 0.0, -eye_r * 0.9)
 		white.add_child(pupil)
-	var mouth := MeshInstance3D.new()
+		var shine := MeshInstance3D.new()
+		var ss := SphereMesh.new()
+		ss.radius = eye_r * 0.14
+		ss.height = eye_r * 0.28
+		shine.mesh = ss
+		shine.material_override = Toon.unshaded(Color.WHITE)
+		shine.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		shine.position = Vector3(eye_r * 0.18, eye_r * 0.2, -eye_r * 0.42)
+		pupil.add_child(shine)
+		_pupils.append(pupil)
+		# brow: a pivot above the eye, tilted by mood
+		var brow := Node3D.new()
+		brow.position = Vector3(x, eye_y + eye_r * 1.3, -surf.call(x) - eye_r * 0.05) + shift
+		var bm := MeshInstance3D.new()
+		var cap := CapsuleMesh.new()
+		cap.radius = eye_r * 0.17
+		cap.height = eye_r * 1.25
+		cap.radial_segments = 8
+		cap.rings = 2
+		bm.mesh = cap
+		bm.rotation.z = PI * 0.5
+		bm.material_override = Toon.unshaded(Color("2b1d24"))
+		bm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		brow.add_child(bm)
+		visual.add_child(brow)
+		_brows.append(brow)
+		# blush
+		var cx: float = eye_r * 2.05 * side
+		var cheek := MeshInstance3D.new()
+		var cs := SphereMesh.new()
+		cs.radius = eye_r * 0.4
+		cs.height = eye_r * 0.8
+		cheek.mesh = cs
+		cheek.scale = Vector3(1.3, 0.7, 0.3)
+		cheek.material_override = Toon.unshaded(Color(0.95, 0.55, 0.6, 0.55))
+		cheek.material_override.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		cheek.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		cheek.position = Vector3(cx, eye_y - eye_r * 1.25, -surf.call(cx) + eye_r * 0.02) + shift
+		if mouth:
+			visual.add_child(cheek)
+		else:
+			cheek.free()
+	if not mouth:
+		return  # the donut's hole is its (permanently shocked) mouth
+	# mouth: a half-disc grin (flat side up) with a tongue; opens into an "O"
+	_mouth = MeshInstance3D.new()
 	var mm := SphereMesh.new()
-	mm.radius = eye_r * 0.45
-	mm.height = eye_r * 0.45
-	mouth.mesh = mm
-	mouth.scale = Vector3(1.8, 0.6, 0.6)
-	mouth.material_override = Toon.unshaded(Color("5a1f2b"))
-	mouth.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	mouth.position = Vector3(0, eye_y - eye_r * 1.6, -front - 0.02)
-	visual.add_child(mouth)
+	mm.radius = eye_r * 0.62
+	mm.height = eye_r * 0.62
+	mm.is_hemisphere = true
+	_mouth.mesh = mm
+	_mouth.rotation.x = PI  # dome pointing down = "D" turned on its side
+	_mouth.material_override = Toon.unshaded(Color("4a1622"))
+	_mouth.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_mouth.position = Vector3(0, eye_y - eye_r * 1.45, -surf.call(0.0) - 0.005) + shift
+	visual.add_child(_mouth)
+	var tongue := MeshInstance3D.new()
+	var tm := SphereMesh.new()
+	tm.radius = eye_r * 0.32
+	tm.height = eye_r * 0.32
+	tm.is_hemisphere = true
+	tongue.mesh = tm
+	tongue.material_override = Toon.unshaded(Color("e86a7a"))
+	tongue.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	tongue.position = Vector3(0, eye_r * 0.36, eye_r * 0.45)
+	tongue.scale = Vector3(1.0, 0.7, 0.5)
+	_mouth.add_child(tongue)
 
 func add_name_tag(color: Color) -> void:
 	var l := Label3D.new()
@@ -216,6 +338,7 @@ func add_name_tag(color: Color) -> void:
 func _make_limb(local_pos: Vector3, length: float, radius: float) -> RigidBody3D:
 	var limb := RigidBody3D.new()
 	limb.mass = 0.08
+	limb.gravity_scale = GRAV
 	limb.collision_layer = 4
 	limb.collision_mask = 1
 	limb.angular_damp = 3.0
@@ -287,9 +410,18 @@ func _physics_process(delta: float) -> void:
 		_coyote -= delta
 
 	_action_cd -= delta
+	if _windup > 0.0:
+		_windup -= delta
+		if is_crashed or not throwable():
+			_windup = 0.0
+		elif _windup <= 0.0:
+			_release()
+		elif _grabbed is Player and is_instance_valid(_grabbed):
+			# hoist the victim up over our head
+			(_grabbed as Player).apply_central_force(Vector3.UP * 40.0 - forward() * 6.0)
 	if is_crashed:
 		crash_timer += delta
-		if (crash_timer > 1.3 and linear_velocity.length() < 1.5) or crash_timer > 4.0:
+		if (crash_timer > 1.0 and linear_velocity.length() < 1.8) or crash_timer > 3.2:
 			_recover()
 	else:
 		_control(delta)
@@ -299,6 +431,7 @@ func _physics_process(delta: float) -> void:
 		fell_off()
 
 	_update_grab()
+	_update_aim()
 	_animate_visual(delta)
 
 func _control(delta: float) -> void:
@@ -329,7 +462,7 @@ func _control(delta: float) -> void:
 	# horizontal movement (relative to whatever we stand on: rafts, pizzas)
 	var target := flat_in.limit_length(1.0) * move_speed + ground_velocity()
 	var hv := Vector3(linear_velocity.x, 0, linear_velocity.z)
-	var accel := 14.0 if _grounded else 5.0
+	var accel := 18.0 if _grounded else 7.0
 	if on_ice():
 		accel = 2.2
 	apply_central_force((target - hv) * accel * mass)
@@ -342,7 +475,7 @@ func _control(delta: float) -> void:
 		_squash(Vector3(0.8, 1.3, 0.8))
 	jump_requested = false
 
-	if action_requested and _action_cd <= 0.0:
+	if action_requested and _action_cd <= 0.0 and _windup <= 0.0:
 		_action()
 
 func _check_ground() -> bool:
@@ -434,6 +567,7 @@ func crash(power: float) -> void:
 func fling(v: Vector3) -> void:
 	_ignore_dv = 4
 	_coyote = 0.0
+	v *= ARC
 	linear_velocity = v
 	# the floppy limbs come along, or they'd drag us back down
 	for l in _limbs:
@@ -447,7 +581,7 @@ func hit(impulse: Vector3, by: Player = null) -> void:
 		_last_hit_by = by
 		_last_hit_time = Time.get_ticks_msec() / 1000.0
 	_ignore_dv = 2
-	apply_central_impulse(impulse)
+	apply_central_impulse(impulse * ARC)
 	crash(impulse.length() * 2.0)
 
 ## A shove that only knocks over someone already off balance.
@@ -457,7 +591,7 @@ func push(impulse: Vector3, by: Player = null) -> void:
 	_last_hit_by = by
 	_last_hit_time = Time.get_ticks_msec() / 1000.0
 	_ignore_dv = 2
-	apply_central_impulse(impulse)
+	apply_central_impulse(impulse * ARC)
 	if not _grounded or is_crashed:
 		crash(impulse.length() * 2.0)
 
@@ -466,7 +600,7 @@ func _recover() -> void:
 	_tilt_timer = 0.0
 	_ignore_dv = 3
 	angular_velocity *= 0.2
-	linear_velocity.y = 3.5
+	linear_velocity.y = 3.5 * ARC
 	recovered.emit()
 
 func fell_off() -> void:
@@ -540,7 +674,7 @@ func hold_in_pod(ground: Vector3, auto := 0.0) -> void:
 	_pod.scale = s * 0.01
 	_pod.create_tween().tween_property(_pod, "scale", s, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	# sunk into the pod, only the top peeks out: height of our feet above the floor
-	var feet := {"furniture/toaster": 0.4, "food/eggCup": 0.75}.get(pod_id, 0.16) as float
+	var feet := {"furniture/toaster": 0.4, "food/eggCup": 0.75, "food/bowl": 0.3}.get(pod_id, 0.16) as float
 	_hold_xf = Transform3D(Basis.looking_at(look, Vector3.UP), base + Vector3.UP * (feet + 0.575))
 	_hold = true
 	_apply_hold()
@@ -557,7 +691,7 @@ func launch() -> void:
 	_hold = false
 	_ignore_dv = 4
 	var toaster := skin == "toast"
-	linear_velocity = Vector3.UP * (9.0 if toaster else 6.0) + _face_dir * 1.2
+	linear_velocity = (Vector3.UP * (9.0 if toaster else 6.0) + _face_dir * 1.2) * ARC
 	angular_velocity = Vector3(randf_range(-2, 2), 0, randf_range(-2, 2)) if toaster else Vector3.ZERO
 	if is_human or randf() < 0.3:
 		Game.play("ding" if toaster else "pop", 0.08, -2.0 if is_human else -12.0)
@@ -585,12 +719,58 @@ func _skin_crash(power: float) -> void:
 			else:
 				Game.play("crack", 0.1, 0.0 if is_human else -10.0)
 				_update_cracks()
+		"banana":
+			Fx.burst(get_parent(), global_position, "food/banana", 4, 0.12)
+			if randf() < 0.6:
+				_drop_peel()
 		"toast":
 			# a little more toasted every time
 			Props.tint(_body_model, Color("3a2412"), clampf(crash_count * 0.12, 0.0, 0.75))
 			Fx.burst(get_parent(), global_position, "food/bread", 5, 0.1)
 		_:
 			Fx.burst(get_parent(), global_position, skin_data(skin).model, 4, 0.12)
+
+## Banana: every crash leaves a peel behind. Whoever steps on it next
+## (anyone but us, for a moment) slips and goes flying.
+func _drop_peel() -> void:
+	if _peel and is_instance_valid(_peel):
+		_peel.queue_free()
+	var r := get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(global_position, global_position + Vector3.DOWN * 3.0, 1))
+	if r.is_empty():
+		return
+	var area := Area3D.new()
+	area.collision_layer = 0
+	area.collision_mask = 2
+	var cs := CollisionShape3D.new()
+	var sp := SphereShape3D.new()
+	sp.radius = 0.45
+	cs.shape = sp
+	cs.position.y = 0.3
+	area.add_child(cs)
+	var peel := FoodMesh.peel(0.8)
+	area.add_child(peel)
+	get_parent().add_child(area)
+	area.global_position = r.position
+	area.rotation.y = randf() * TAU
+	peel.scale = Vector3.ONE * 0.2
+	peel.create_tween().tween_property(peel, "scale", Vector3.ONE, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_peel = area
+	var born := Time.get_ticks_msec()
+	area.body_entered.connect(func(b):
+		if not b is Player or (b == self and Time.get_ticks_msec() - born < 1500):
+			return
+		var p := b as Player
+		if p.is_crashed or p.is_held():
+			return
+		var dir := Vector3(p.linear_velocity.x, 0, p.linear_velocity.z)
+		dir = dir.normalized() if dir.length() > 0.5 else p.forward()
+		p.hit(dir * 3.0 + Vector3.UP * 6.5, self if b != self else null)
+		p.apply_torque_impulse(dir.cross(Vector3.UP) * -0.6)
+		Game.play("boing", 0.1, 0.0 if p.is_human else -10.0)
+		Fx.word(area.get_parent(), area.global_position + Vector3.UP * 1.2, "SLIP!", UI.YELLOW)
+		area.set_deferred("monitoring", false)
+		Fx.fade_out(area, 0.1))
+	Fx.fade_out(area, 7.0)
 
 func _show_body(on: bool) -> void:
 	visual.visible = on
@@ -607,7 +787,7 @@ func _update_cracks() -> void:
 			m.alpha_scissor_threshold = 0.4
 			m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 			m.uv1_triplanar = true
-			m.uv1_scale = Vector3(6, 6, 6)
+			m.uv1_scale = Vector3(1.1, 1.1, 1.1)
 			_crack_mats.append(m)
 	for mi: MeshInstance3D in Props.meshes(_body_model):
 		mi.material_overlay = null if cracks <= 0 else _crack_mats[mini(cracks, 2) - 1]
@@ -653,7 +833,7 @@ func _splat() -> void:
 		fried.create_tween().tween_property(fried, "scale", fried.scale * 5.0, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 		Fx.fade_out(fried, 4.0)
 	splatted.emit()
-	get_tree().create_timer(1.1).timeout.connect(func():
+	get_tree().create_timer(0.9).timeout.connect(func():
 		if is_inside_tree() and not is_out:
 			respawn())
 
@@ -680,60 +860,144 @@ func _use_ammo() -> void:
 			_item_model = null
 	item_changed.emit(item, ammo)
 
+## Can the ACT button throw something right now (a grabbed player or a
+## throwable item)?
+func throwable() -> bool:
+	return grabbing_player() or item in ["tomato", "cookie", "melon"]
+
+## Aim assist (human only): with something to throw, the closest player
+## roughly in front gets locked on (main.gd marks them); once locked it
+## stays locked over a wider angle, so the aim "sticks" without yanking.
+func _update_aim() -> void:
+	if not is_human or is_crashed or _hold or not throwable():
+		aim_target = null
+		return
+	var f := forward()
+	var reach := 9.0 if grabbing_player() else 15.0
+	var best: Player = null
+	var best_score := INF
+	for o in get_tree().get_nodes_in_group("players"):
+		var p := o as Player
+		if p == null or p == self or p == _grabbed or p.is_out or (team >= 0 and p.team == team):
+			continue
+		var locked := p == aim_target
+		var to := p.global_position - global_position
+		if absf(to.y) > 4.0:
+			continue
+		to.y = 0
+		var d := to.length()
+		if d < 0.4 or d > reach * (1.2 if locked else 1.0):
+			continue
+		var a := f.angle_to(to / d)
+		if a > (0.6 if locked else 0.35):
+			continue
+		var score := a + d * 0.02 - (0.3 if locked else 0.0)
+		if score < best_score:
+			best_score = score
+			best = p
+	aim_target = best
+
+## Flat throw direction: at the locked target, else straight ahead.
+func _aim_dir() -> Vector3:
+	if aim_target and is_instance_valid(aim_target):
+		var to := aim_target.global_position - global_position
+		to.y = 0
+		if to.length() > 0.1:
+			return to.normalized()
+	return forward()
+
+## Launch velocity for a thrown item: `speed` flat along the aim; with a
+## locked target the arc is solved so it lands on them, else `up`.
+func _throw_vel(origin: Vector3, speed: float, up: float) -> Vector3:
+	var dir := _aim_dir()
+	if aim_target and is_instance_valid(aim_target):
+		var to := aim_target.global_position + aim_target.linear_velocity * 0.15 - origin
+		var dy := to.y
+		to.y = 0
+		var t := maxf(to.length() / speed, 0.05)
+		up = clampf(9.8 * t * 0.5 + dy / t, 0.5, 9.0)
+	return dir * speed + Vector3.UP * up
+
 func _action() -> void:
+	# throws wind up first (lean back, arm/victim up) so you can see them coming
+	if throwable() and item != "cookie":
+		_windup = WINDUP
+		_action_cd = WINDUP + 0.1
+		if grabbing_player():
+			Game.play("creak", 0.15, -10.0 if is_human else -20.0)
+		return
+	_release()
+
+## The actual hit/throw, after any wind-up.
+func _release() -> void:
 	_swing = 1.0
 	# 1) holding someone: YEET them
 	if _grabbed is Player and is_instance_valid(_grabbed):
 		var victim: Player = _grabbed
+		var dir := _aim_dir()
 		release_grab()
-		victim.hit(forward() * 9.0 + Vector3.UP * 6.0, self)
+		victim.hit(dir * 9.0 + Vector3.UP * 6.0, self)
 		Game.play("throw", 0.1, 0.0 if is_human else -8.0)
-		_action_cd = 0.6
+		Fx.word(get_parent(), victim.global_position + Vector3.UP * 1.0, "YEET!", UI.YELLOW, 1.2)
+		Fx.swoosh(get_parent(), _swoosh_xf(0.2), 1.3)
+		_action_cd = 0.5
 		return
 	# 2) items
 	if item != "":
 		_use_item()
 		return
 	# 3) plain shove
-	_action_cd = 0.55
+	_action_cd = 0.45
+	Fx.swoosh(get_parent(), _swoosh_xf(0.0))
 	var hits := _bodies_in_front(0.75, 0.85)
 	var any := false
 	for b in hits:
 		if b is Player and b != self:
 			(b as Player).push(forward() * 5.5 + Vector3.UP * 1.8, self)
+			Fx.word(get_parent(), (b as Player).global_position + Vector3.UP * 0.9, ["POW!", "BAM!", "SHOVE!", "OOF!"].pick_random(), UI.YELLOW)
 			any = true
 		elif b is RigidBody3D:
 			(b as RigidBody3D).apply_central_impulse(forward() * 3.0 + Vector3.UP * 1.0)
 			any = true
 	if any:
 		Game.play("punch", 0.15, 0.0 if is_human else -8.0)
+		_squash(Vector3(0.85, 0.9, 1.3))
 	else:
 		Game.play("throw", 0.2, -10.0 if is_human else -20.0)
+
+func _swoosh_xf(up: float) -> Transform3D:
+	var f := forward()
+	return Transform3D(Basis.looking_at(f, Vector3.UP), global_position + Vector3.UP * up + f * 0.1)
 
 func _use_item() -> void:
 	var f := forward()
 	var origin := global_position + f * 0.7 + Vector3.UP * 0.35
 	match item:
 		"tomato":
-			Projectile.fire(get_parent(), "tomato", origin, f * 13.0 + Vector3.UP * 3.5, self)
-			_action_cd = 0.35
+			Projectile.fire(get_parent(), "tomato", origin, _throw_vel(origin, 13.0, 3.5), self)
+			_action_cd = 0.3
 		"cookie":
-			Projectile.fire(get_parent(), "cookie", origin, f * 19.0 + Vector3.UP * 1.2, self)
-			_action_cd = 0.25
+			Projectile.fire(get_parent(), "cookie", origin, _throw_vel(origin, 19.0, 1.2), self)
+			_action_cd = 0.22
 			Game.play("shoot", 0.1, -4.0 if is_human else -14.0)
+			_squash(Vector3(1.15, 0.9, 0.85))  # recoil
 		"melon":
-			Projectile.fire(get_parent(), "melon", origin, f * 10.0 + Vector3.UP * 4.5, self)
-			_action_cd = 0.6
-		"pin":
+			Projectile.fire(get_parent(), "melon", origin, _throw_vel(origin, 10.0, 4.5), self)
 			_action_cd = 0.5
+		"pin":
+			_action_cd = 0.45
+			Fx.swoosh(get_parent(), _swoosh_xf(0.2), 1.2)
 			var landed := false
 			for b in _bodies_in_front(1.0, 1.1):
 				if b is Player and b != self:
 					(b as Player).hit(f * 8.5 + Vector3.UP * 4.0, self)
+					Fx.word(get_parent(), (b as Player).global_position + Vector3.UP * 0.9, "BONK!", UI.YELLOW, 1.1)
 					landed = true
 			Game.play("bonk" if landed else "throw", 0.1, 0.0 if is_human else -8.0)
 	if item != "pin":
 		Game.play("throw", 0.1, -2.0 if is_human else -14.0)
+		if item != "cookie":
+			Fx.swoosh(get_parent(), _swoosh_xf(0.45), 0.9)
 	_use_ammo()
 
 func _bodies_in_front(radius: float, dist: float) -> Array:
@@ -759,7 +1023,7 @@ func _bodies_in_front(radius: float, dist: float) -> Array:
 func _update_grab() -> void:
 	if grab_held and _grab_joint == null and not is_crashed:
 		_try_grab()
-	elif (not grab_held or is_crashed) and _grab_joint != null:
+	elif (not grab_held or is_crashed) and _grab_joint != null and _windup <= 0.0:
 		release_grab()
 	elif _grabbed and not is_instance_valid(_grabbed):
 		release_grab()
@@ -794,6 +1058,9 @@ func _try_grab() -> void:
 	j.node_b = other.get_path()
 	_grab_joint = j
 	_grabbed = other
+	if other is Player:
+		Fx.word(get_parent(), (other as Player).global_position + Vector3.UP * 0.9, "GOTCHA!", UI.TEAL, 0.8)
+		_squash(Vector3(1.15, 0.9, 1.15))
 	if is_human:
 		Game.play("coin", 0.1, -10.0)
 
@@ -813,7 +1080,67 @@ func _squash(s: Vector3) -> void:
 	visual.scale = s
 	tw.tween_property(visual, "scale", Vector3.ONE, 0.35).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
 
+## Face acting: googly pupils pushed around by acceleration (+ gravity, so
+## they sag a little and float when you fly), blinking, brows and mouth by
+## mood: happy, angry (grabbing / shoving / winding up), scared (flying,
+## falling), dizzy (crashed: pupils spin).
+func _animate_face(delta: float) -> void:
+	if _eyes.is_empty() or delta <= 0.0:
+		return
+	var v := linear_velocity
+	var acc := (v - _face_prev_v) / delta
+	_face_prev_v = v
+	var g := visual.global_basis.inverse() * (Vector3.DOWN * 9.8 * GRAV - acc.limit_length(250.0))
+	_pupil_vel += (Vector2(-g.x, g.y) * 0.4 - _pupil_off * 40.0) * delta
+	_pupil_vel *= exp(-delta * 5.0)
+	_pupil_off += _pupil_vel * delta
+	if _pupil_off.length() > 1.0:
+		var n := _pupil_off.normalized()
+		_pupil_off = n
+		_pupil_vel -= n * _pupil_vel.dot(n) * 1.5  # bounce off the rim
+	var mood := "happy"
+	if is_crashed:
+		mood = "dizzy"
+	elif not _grounded and (_air_time > 0.45 or v.y < -7.0):
+		mood = "scared"
+	elif grab_held or _swing > 0.0 or _windup > 0.0:
+		mood = "angry"
+	var off := _pupil_off
+	if mood == "dizzy":
+		_dizzy += delta * 11.0
+		off = Vector2(cos(_dizzy), sin(_dizzy)) * 0.75
+	elif mood == "angry" and _grabbed == null:
+		off = off.lerp(Vector2(0, -0.1), 0.6)
+	for i in _pupils.size():
+		var o := off if mood != "dizzy" or i == 0 else -off
+		# ride on the white's (flattened) dome
+		var p := o * 0.5
+		_pupils[i].position = Vector3(p.x, p.y, -sqrt(maxf(1.0 - p.length_squared(), 0.0)) * 0.9) * _eye_r
+	# blink
+	_blink_in -= delta
+	if _blink_in <= 0.0:
+		_blink = 0.13
+		_blink_in = randf_range(1.8, 4.5)
+	_blink -= delta
+	var lid := 0.12 if _blink > 0.0 and mood != "dizzy" else (1.25 if mood == "scared" else 1.0)
+	for e in _eyes:
+		e.scale.y = lerpf(e.scale.y, lid, minf(delta * 30.0, 1.0))
+		e.scale.x = lerpf(e.scale.x, 1.15 if mood == "scared" else 1.0, minf(delta * 12.0, 1.0))
+	# brows: angry = inner ends down, scared/dizzy = inner ends up and raised
+	var tilt: float = BROW_TILT[mood]
+	var lift: float = BROW_LIFT[mood]
+	for i in _brows.size():
+		var side := -1.0 if i == 0 else 1.0
+		var b := _brows[i]
+		b.rotation.z = lerp_angle(b.rotation.z, tilt * side, minf(delta * 14.0, 1.0))
+		var base_y := _eyes[i].position.y + _eye_r * 1.3
+		b.position.y = lerpf(b.position.y, base_y + lift * _eye_r, minf(delta * 14.0, 1.0))
+	if _mouth:
+		var ms: Vector3 = MOUTH_SHAPE[mood]
+		_mouth.scale = _mouth.scale.lerp(ms, minf(delta * 14.0, 1.0))
+
 func _animate_visual(delta: float) -> void:
+	_animate_face(delta)
 	var speed := Vector3(linear_velocity.x, 0, linear_velocity.z).length()
 	if _grounded and not is_crashed and speed > 0.5:
 		_waddle += delta * speed * 2.6
@@ -822,12 +1149,27 @@ func _animate_visual(delta: float) -> void:
 	else:
 		visual.rotation.z = lerp(visual.rotation.z, 0.0, delta * 8.0)
 		visual.position.y = lerp(visual.position.y, 0.0, delta * 8.0)
-	# punch: body lunges and arms fling forward
-	if _swing > 0.0:
-		_swing = maxf(_swing - delta * 4.0, 0.0)
-		visual.rotation.x = -sin(_swing * PI) * 0.35
+	var item_rest := Vector3(0.5, -0.05, -0.35)
+	if _windup > 0.0:
+		# wind-up: lean back, arms and the item go up behind the head
+		var w := ease(1.0 - _windup / WINDUP, 0.5)
+		visual.rotation.x = w * 0.45
+		visual.position.z = w * 0.12
 		if _limbs.size() >= 2:
 			for i in 2:
-				_limbs[i].apply_central_force(forward() * 12.0 * _swing)
-		if _item_model and item == "pin":
-			_item_model.rotation.x = -sin(_swing * PI) * 1.6
+				_limbs[i].apply_central_force((Vector3.UP * 1.5 - forward()).normalized() * 8.0)
+		if _item_model:
+			_item_model.position = item_rest.lerp(Vector3(0.3, 0.6, 0.3), w)
+			_item_model.rotation.x = w * 1.2
+	elif _swing > 0.0:
+		# release / shove: snap forward fast, arms fling out, settle back
+		_swing = maxf(_swing - delta * 4.0, 0.0)
+		var lean := sin(sqrt(1.0 - _swing) * PI)
+		visual.rotation.x = -lean * 0.5
+		visual.position.z = -lean * 0.22
+		if _limbs.size() >= 2:
+			for i in 2:
+				_limbs[i].apply_central_force(forward() * 16.0 * _swing)
+		if _item_model:
+			_item_model.position = item_rest
+			_item_model.rotation.x = -lean * 1.6 if item == "pin" else 0.0

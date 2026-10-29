@@ -30,7 +30,7 @@ copy() { # copy <dest dir> <pack models dir> names...
 copy food "foodKit_v1.2/Models/GLTF format" \
   egg eggHalf eggCooked eggCup bread loaf donutSprinkles cupcake burger tomato watermelon \
   pie fryingPan rollingPin cookingKnifeChopping meatTenderizer cuttingBoard plate pizza waffle \
-  bottleKetchup cheese broccoli carrot eggplant pepper whisk croissant cookie sodaCan
+  bottleKetchup cheese broccoli carrot eggplant pepper whisk croissant cookie sodaCan banana bowl
 copy furniture "furniturekit_updated/Models/GLTF format" \
   toaster kitchenFridgeLarge kitchenStove kitchenCabinet kitchenCabinetUpper kitchenSink \
   kitchenMicrowave kitchenCoffeeMachine kitchenBlender

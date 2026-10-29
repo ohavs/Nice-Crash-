@@ -68,6 +68,8 @@ func _on_hit(b: Node) -> void:
 			return  # resting / slow rollers don't knock people over
 		var dir := Vector3(v.x, 0, v.z).normalized()
 		(b as Player).hit(dir * d.power + Vector3.UP * 3.5, thrower)
+		var words := {"tomato": "SPLAT!", "melon": "SPLOSH!", "cookie": "BONK!", "cannon": "BOOM!"}
+		Fx.word(get_parent(), b.global_position + Vector3.UP * 0.9, words.get(kind, "WHAM!"), UI.YELLOW if thrower else UI.CORAL)
 		Game.play("splat" if d.splat else "bonk", 0.15, -2.0)
 		if d.get("keep", false):
 			return
