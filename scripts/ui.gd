@@ -17,9 +17,26 @@ static func font() -> Font:
 		_font = load("res://assets/kenney/lilita_one_regular.ttf")
 	return _font
 
+## Our icon names -> Kenney Game Icons (white, assets/kenney/icons), HUD
+## hearts, and a particle-pack star for the title burst.
+const ICONS := {
+	"act": "fightFist", "bang": "exclamation", "bot": "userRobot", "close": "cross", "coin": "coin",
+	"crown": "trophy", "download": "import", "gear": "gear", "grab": "pointer", "home": "home",
+	"jump": "arrowUp", "left": "left", "right": "right", "lock": "locked", "map": "flag", "flag": "flag",
+	"minus": "minus", "plus": "plus", "party": "multiplayer", "pause": "pause", "play": "right",
+	"refresh": "return", "star": "star", "star_empty": "star", "team": "multiplayer", "versus": "target",
+	"timer": "fastForward", "heart": "hudHeart_full", "heart_empty": "hudHeart_empty", "arrow": "arrowUp",
+	"target": "target", "checkmark": "checkmark", "trophy": "trophy", "leaderboard": "leaderboardsComplex",
+	"multiplayer": "multiplayer", "online": "massiveMultiplayer", "wifi": "signal3", "key": "key",
+	"exit": "exitLeft", "warning": "warning", "medal": "medal1", "solo": "singleplayer",
+}
+
 static func icon(name: String) -> Texture2D:
 	if not _icons.has(name):
-		_icons[name] = load("res://assets/ui/%s.svg" % name)
+		if name == "burst":
+			_icons[name] = load("res://assets/kenney/particles/star_07.png")
+		else:
+			_icons[name] = load("res://assets/kenney/icons/%s.png" % ICONS.get(name, name))
 	return _icons[name]
 
 static func label(text: String, size: int, color := WHITE, outline := true) -> Label:
@@ -62,6 +79,10 @@ static func button(text: String, color: Color, size: int, cb: Callable, icon_nam
 	b.add_theme_constant_override("outline_size", int(size * 0.28))
 	if icon_name != "":
 		b.icon = icon(icon_name)
+		if color == WHITE or color == CREAM:
+			# white icons on a white button: ink them
+			for st in ["icon_normal_color", "icon_hover_color", "icon_pressed_color", "icon_hover_pressed_color", "icon_focus_color", "icon_disabled_color"]:
+				b.add_theme_color_override(st, INK)
 		b.expand_icon = false
 		b.add_theme_constant_override("icon_max_width", int(size * 1.15))
 		b.add_theme_constant_override("h_separation", int(size * 0.25))
@@ -169,7 +190,8 @@ static func star_row(got: int, total: int, size: float) -> HBoxContainer:
 	hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	for i in total:
 		var tr := TextureRect.new()
-		tr.texture = icon("star" if i < got else "star_empty")
+		tr.texture = icon("star")
+		tr.modulate = YELLOW if i < got else Color(0.25, 0.2, 0.3, 0.3)
 		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		tr.custom_minimum_size = Vector2(size, size)

@@ -18,6 +18,8 @@ extends Node3D
 var area := AABB(Vector3(-8, 0, -8), Vector3(16, 4, 16))
 var theme := "meadow"
 var shadows := true
+## false: sky, light and clouds only (the open world brings its own land).
+var backdrop := true
 ## Keep land at least this far outside the area.
 var clearance := 22.0
 ## How far the ring of scenery reaches beyond the clearance.
@@ -33,6 +35,9 @@ var _rng := RandomNumberGenerator.new()
 func _ready() -> void:
 	_rng.seed = hash(theme) + 7
 	_environment()
+	if not backdrop:
+		_clouds()
+		return
 	match theme:
 		"kitchen":
 			_kitchen()
@@ -89,9 +94,14 @@ func _environment() -> void:
 	env.glow_intensity = 0.12
 	env.glow_bloom = 0.0
 	env.fog_enabled = true
-	var fog := {"kitchen": Color("ffe3c4"), "forest": Color("a7d6b8"), "snow": Color("e4f2ff")}
+	var fog := {"kitchen": Color("ffe3c4"), "forest": Color("a7d6b8"), "snow": Color("e4f2ff"), "graveyard": Color("4a3f66")}
 	env.fog_light_color = fog.get(theme, Color("b9b2ff"))
 	env.fog_density = 0.0018 if theme == "forest" or theme == "snow" else 0.0011
+	if not backdrop:
+		# open world: haze hides the far mountains (and saves drawing them)
+		env.fog_light_color = fog.get(theme, Color("bcd4f2"))
+		env.fog_density = {"forest": 0.0035, "graveyard": 0.0045, "snow": 0.0025}.get(theme, 0.0016)
+		env.fog_sky_affect = 0.0
 	env.fog_sky_affect = 0.0
 	env.fog_aerial_perspective = 0.0
 	env.adjustment_enabled = true
@@ -104,6 +114,16 @@ func _environment() -> void:
 	sun.rotation_degrees = Vector3(-52, -35, 0)
 	sun.light_energy = 0.95
 	sun.light_color = Color("fff1dc") if theme != "snow" else Color("f2f6ff")
+	if theme == "graveyard":
+		# dusk: low orange sun, purple sky and shadows
+		sun.rotation_degrees = Vector3(-22, -60, 0)
+		sun.light_color = Color("ffae6b")
+		sun.light_energy = 0.75
+		env.ambient_light_color = Color("8f7fd0")
+		env.ambient_light_energy = 0.45
+		env.background_energy_multiplier = 0.55
+		env.adjustment_brightness = 0.85
+		env.adjustment_saturation = 0.95
 	sun.shadow_enabled = shadows
 	sun.directional_shadow_max_distance = 32.0
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS

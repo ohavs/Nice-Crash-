@@ -31,8 +31,8 @@ const LEVELS := [
 const R := 70.0
 const Q := "quaternius/nature/"
 const TREES := {
-	"meadow": ["CommonTree_1", "CommonTree_2", "CommonTree_3", "CommonTree_4", "CommonTree_5", "Birch_1", "Birch_3"],
-	"forest": ["GiantPine_1", "GiantPine_3", "Pine_1", "Pine_2", "Pine_3", "TwistedTree_1", "TallThick_1"],
+	"meadow": ["CommonTree_1", "CommonTree_2", "CommonTree_3", "CommonTree_4", "CommonTree_5", "CommonTree_1", "Birch_3"],
+	"forest": ["GiantPine_1", "GiantPine_3", "Pine_1", "Pine_2", "Pine_3", "GiantPine_1", "TwistedTree_1"],
 	"graveyard": ["DeadTree_1", "DeadTree_2", "DeadTree_3", "TwistedTree_3"],
 	"pirate": ["CommonTree_3", "CommonTree_5", "Birch_3"],
 	"snow": ["Pine_1", "Pine_2", "Pine_3", "Pine_5"],
@@ -45,11 +45,11 @@ const GROUND := {
 	"snow": ["Grass_Wheat", "Pebble_Round_1", "Pebble_Round_3"],
 }
 const BUSHES := {
-	"meadow": ["Bush_Common", "Bush_Common_Flowers", "Bush_Large", "Plant_1_Big", "Bush_Long_1"],
-	"forest": ["Bush_Large", "Plant_1_Big", "Fern_1", "Bush_Common"],
+	"meadow": ["Bush_Common_Flowers", "Bush_Large", "Plant_1_Big", "Bush_Long_1", "Bush_Large"],
+	"forest": ["Bush_Large", "Plant_1_Big", "Fern_1"],
 	"graveyard": ["Bush_Long_1", "Plant_7_Big", "Bush_Common"],
 	"pirate": ["Bush_Common_Flowers", "Plant_1_Big", "Bush_Large"],
-	"snow": ["Bush_Common", "Rock_Medium_2"],
+	"snow": ["Bush_Large", "Rock_Medium_2"],
 }
 const PALETTE := {
 	"meadow": [Color(0.38, 0.56, 0.23), Color(0.52, 0.6, 0.27)],
@@ -319,14 +319,14 @@ func _cover(grass: int, bushes: int) -> void:
 		if not _free(x, z, 0.45, 0.3):
 			continue
 		var id_: String = Q + g[_rng.randi() % g.size()]
-		_add(id_, ground(x, z) - Vector3(0, 0.05, 0), _rng.randf_range(0.7, 1.25), -1.0, 34.0, false)
+		_add(id_, ground(x, z) - Vector3(0, 0.05, 0), _rng.randf_range(0.4, 0.75), -1.0, 34.0, false)
 	for i in bushes:
 		var x := _rng.randf_range(-R, R)
 		var z := _rng.randf_range(-R, R)
 		if not _free(x, z, 0.4, 1.0):
 			continue
 		var id_: String = Q + b[_rng.randi() % b.size()]
-		_add(id_, ground(x, z) - Vector3(0, 0.1, 0), _rng.randf_range(0.8, 1.4), -1.0, 70.0, false)
+		_add(id_, ground(x, z) - Vector3(0, 0.1, 0), _rng.randf_range(0.5, 0.95), -1.0, 70.0, false)
 
 ## Boulder: solid (convex collider), sits a little into the ground.
 func _rock(name_: String, x: float, z: float, size_: float, yaw := -1.0) -> StaticBody3D:
@@ -601,6 +601,8 @@ func spawn_enemy(kind: String, x: float, z: float, mi := -1, awake := true, leas
 	return e
 
 func _on_enemy_died(e: Enemy, _by: Player) -> void:
+	if Net.active() and Net.is_host():
+		Net.send(0, "edie", [e.net_id])
 	if e.mission >= 0:
 		missions[e.mission].spots.erase(e)
 		if not Net.is_client():
@@ -896,7 +898,7 @@ func _meadow_zone() -> void:
 	_woods(54, 2, 12, 10)
 	_woods(-12, 30, 6, 4)
 	_woods(50, 48, 12, 8)
-	_woods(-50, 50, 12, 10, 6.0, 9.0, ["Birch_1", "Birch_3"])
+	_woods(-50, 50, 12, 10, 6.0, 9.0, ["Birch_3", "CommonTree_2", "CommonTree_4"])
 	_rocks(14)
 	_cover(3800, 260)
 	_coin_trail(_v2(0, 40), _v2(0, 14), 6)

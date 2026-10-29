@@ -41,7 +41,7 @@ func _process(delta: float) -> bool:
 		if _main == null or not "racers" in _main:
 			_main = null
 			return false
-		print("level built: route %.0f m, %d coins, %d racers" % [_main.level.route_length(), _main.level.coins_total, _main.racers.size()])
+		print("level built: %d coins, %d racers, mode %s" % [_main.level.coins_total, _main.racers.size(), _main.mode])
 		return false
 	if _main.player and not _main.player.has_meta("autopilot"):
 		# let a bot drive you too (loaded at runtime: class_name scripts that
@@ -50,7 +50,7 @@ func _process(delta: float) -> bool:
 		_main.set_physics_process(false)  # stop the touch controls zeroing the input
 		var b = load("res://scripts/bot.gd").new()
 		b.level = _main.level
-		b.mode = {"survival": "survive", "koth": "koth", "brawl": "brawl"}.get(_main.mode, "race")
+		b.mode = {"survival": "survive", "koth": "koth", "brawl": "brawl"}.get(_main.mode, "quest")
 		b.skill = 1.0
 		_main.player.add_child(b)
 	if not _main.running and not _main._over:
@@ -60,13 +60,14 @@ func _process(delta: float) -> bool:
 		_next_report += float(OS.get_environment("PT_EVERY")) if OS.has_environment("PT_EVERY") else 10.0
 		var line := "t=%5.1f" % _t
 		for p in _main.racers:
-			var s: float = _main.level.progress(p.global_position) if _main.mode == "adventure" else 0.0
-			line += "  %s:%s%.0f%s" % [p.display_name.left(6), "OUT " if p.is_out else "", s, " FIN" if p.finished else ""]
+			line += "  %s:%s hp%d" % [p.display_name.left(6), "OUT " if p.is_out else "", p.hp]
 			if OS.has_environment("PT_POS"):
 				line += "(%.0f,%.0f,%.0f)" % [p.global_position.x, p.global_position.y, p.global_position.z]
+		if _main.world:
+			line += "  missions " + ", ".join(_main.world.missions.map(func(m): return "%d/%d" % [m.got, m.need]))
 		print(line)
 	if _main._over:
-		print("OVER at %.1f s  coins %d/%d  crashes %d" % [_t, _main.coins, _main.level.coins_total, _main.crashes])
+		print("OVER at %.1f s  coins %d/%d  crashes %d  kos %d" % [_t, _main.coins, _main.level.coins_total, _main.crashes, _main.kos])
 		var sc := ""
 		for p in _main.racers:
 			sc += "%s=%.0f " % [p.display_name.left(6), _main._score[p]]

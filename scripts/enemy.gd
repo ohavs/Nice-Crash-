@@ -77,7 +77,7 @@ func _ready() -> void:
 	col.shape = cap
 	col.position.y = h * 0.48
 	add_child(col)
-	var id := "kaykit/skeletons/" + data.model
+	var id: String = "kaykit/skeletons/" + data.model
 	_model = Props.make(id)
 	var s: float = h / Props.base_size(id).y
 	_model.scale = Vector3.ONE * s
@@ -295,9 +295,9 @@ func _swing() -> void:
 func _shoot() -> void:
 	if _target == null or not is_instance_valid(_target):
 		return
-	var origin := global_position + Vector3.UP * data.height * 0.7 - global_basis.z * 0.6
+	var origin: Vector3 = global_position + Vector3.UP * data.height * 0.7 - global_basis.z * 0.6
 	var aim := _target.global_position + _target.linear_velocity * 0.35 + Vector3.UP * 0.2
-	var to := aim - origin
+	var to: Vector3 = aim - origin
 	var flat := Vector3(to.x, 0, to.z)
 	var speed := 13.0 if data.shot == "arrow" else 9.0
 	var t := maxf(flat.length() / speed, 0.1)

@@ -165,7 +165,11 @@ func _ready() -> void:
 	_build_visual()
 	body_entered.connect(_on_body_entered)
 	checkpoint = global_position
-	if not freeze:
+	if puppet:
+		freeze = true
+		freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+		_net_goal = global_transform
+	if not freeze or puppet:
 		call_deferred("_build_limbs")
 
 static func skin_data(id: String) -> Dictionary:
@@ -1171,7 +1175,7 @@ func _squash(s: Vector3) -> void:
 func _animate_face(delta: float) -> void:
 	if _eyes.is_empty() or delta <= 0.0:
 		return
-	var v := linear_velocity
+	var v := _net_vel if puppet else linear_velocity
 	var acc := (v - _face_prev_v) / delta
 	_face_prev_v = v
 	var g := visual.global_basis.inverse() * (Vector3.DOWN * 9.8 * GRAV - acc.limit_length(250.0))
@@ -1225,7 +1229,8 @@ func _animate_face(delta: float) -> void:
 
 func _animate_visual(delta: float) -> void:
 	_animate_face(delta)
-	var speed := Vector3(linear_velocity.x, 0, linear_velocity.z).length()
+	var lv := _net_vel if puppet else linear_velocity
+	var speed := Vector3(lv.x, 0, lv.z).length()
 	if _grounded and not is_crashed and speed > 0.5:
 		_waddle += delta * speed * 2.6
 		visual.rotation.z = sin(_waddle) * 0.12
@@ -1257,3 +1262,43 @@ func _animate_visual(delta: float) -> void:
 		if _item_model:
 			_item_model.position = item_rest
 			_item_model.rotation.x = -lean * 1.6 if item == "pin" else 0.0
+
+# ---------------------------------------------------------------- network
+
+## What the others need to draw us: [id, position, rotation, velocity,
+## flags (crashed, in pod, out, grounded, grabbing), item, ammo, hp].
+func net_state() -> Array:
+	var flags := int(is_crashed) | int(_hold) << 1 | int(is_out) << 2 | int(_grounded) << 3 | int(grab_held) << 4
+	return [net_id, global_position, global_basis.get_rotation_quaternion(), linear_velocity, flags, item, ammo, hp]
+
+func net_apply(st: Array) -> void:
+	_net_goal = Transform3D(Basis(st[2] as Quaternion), st[1])
+	_net_vel = st[3]
+	var flags: int = st[4]
+	is_crashed = flags & 1 != 0
+	_grounded = flags & 8 != 0
+	grab_held = flags & 16 != 0
+	if flags & 4 != 0 and not is_out:
+		knock_out()
+	if st[5] != item:
+		if st[5] == "":
+			item = ""
+			if _item_model:
+				_item_model.queue_free()
+				_item_model = null
+		else:
+			give_item(st[5])
+	ammo = st[6]
+	if st[7] != hp:
+		hp = st[7]
+		hp_changed.emit(hp)
+
+## Puppets glide towards the owner's latest state (a little ahead, along
+## its velocity, so they don't trail behind).
+func _puppet_step(delta: float) -> void:
+	_net_goal.origin += _net_vel * delta
+	var t := global_transform.interpolate_with(_net_goal, minf(delta * 14.0, 1.0))
+	if t.origin.distance_to(_net_goal.origin) > 6.0:
+		t = _net_goal
+	global_transform = t
+	_animate_visual(delta)

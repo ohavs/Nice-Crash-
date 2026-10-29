@@ -1,7 +1,8 @@
 class_name TouchControls
 extends Control
 ## Floating joystick + JUMP / GRAB / ACT buttons. Positions come from Game.layout
-## (fractions of the screen) and can be dragged around in edit mode.
+## (fractions of the screen) and can be dragged around in edit mode. GRAB
+## only pops up while there's something to grab (set_grab_shown).
 ## A touch that misses the buttons drives the joystick if it is closer to the
 ## joystick's home than to any button; one on the upper part of the screen
 ## drags the camera around instead (consume_look()). Keyboard fallback for PC testing:
@@ -23,6 +24,9 @@ var act_pressed := false
 var act_label := "PUSH"
 var act_ammo := 0
 var edit_mode := false
+## GRAB is on screen (it pops in / out, see set_grab_shown).
+var grab_shown := true
+var _grab_k := 1.0
 
 var _joy_index := -1
 var _joy_origin := Vector2.ZERO
@@ -77,6 +81,8 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		if event.pressed:
 			for b in ["jump", "grab", "act"]:
+				if b == "grab" and _grab_k < 0.5:
+					continue
 				if event.position.distance_to(items[b][0]) < items[b][1] * 1.2:
 					_btn_touch[event.index] = b
 					if b == "jump":
@@ -201,6 +207,15 @@ func consume_act() -> bool:
 	act_pressed = false
 	return a
 
+func set_grab_shown(on: bool) -> void:
+	grab_shown = on
+
+func _process(delta: float) -> void:
+	var want := 1.0 if grab_shown or edit_mode or grab_held else 0.0
+	if not is_equal_approx(_grab_k, want):
+		_grab_k = move_toward(_grab_k, want, delta * 6.0)
+		queue_redraw()
+
 func set_act(label: String, ammo: int) -> void:
 	if label != act_label or ammo != act_ammo:
 		act_label = label
@@ -235,6 +250,10 @@ func _draw() -> void:
 	for b in ["jump", "grab", "act"]:
 		var c: Vector2 = items[b][0]
 		var r: float = items[b][1]
+		if b == "grab":
+			if _grab_k <= 0.01:
+				continue
+			r *= ease(_grab_k, 0.5)
 		var held: bool = b in _btn_touch.values() or (b == "grab" and grab_held)
 		var st := ChunkyStyle.new(cols[b], r, clampf(r * 0.14, 6.0, 12.0), held)
 		var rect := Rect2(c - Vector2(r, r), Vector2(r, r) * 2.0)

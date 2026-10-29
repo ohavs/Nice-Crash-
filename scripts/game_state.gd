@@ -4,6 +4,9 @@ extends Node
 const REPO_API := "https://api.github.com/repos/ohavs/nice-crash-/releases/latest"
 
 const SETTINGS_PATH := "user://settings.cfg"
+## Online multiplayer relay (server/relay.js deployed somewhere, wss://...).
+## Can be changed in Settings -> Online server.
+const DEFAULT_RELAY := ""
 ## Touch control centers as fractions of the screen (x, y).
 const DEFAULT_LAYOUT := {
 	"joy": Vector2(0.72, 0.82),
@@ -28,6 +31,14 @@ var bots := 2
 var coop := false
 ## Opponents in party games (1-4).
 var party_bots := 3
+## Party show: how many rounds (1 = a single game).
+var party_rounds := 1
+## The party show in progress: {rounds, round, totals: key -> points,
+## names: key -> name, played: [game ids]}; empty = none.
+var show := {}
+## Your name in multiplayer lobbies.
+var player_name := ""
+var relay_url := DEFAULT_RELAY
 ## Menu should reopen the party game list (coming back from a party game).
 var open_party := false
 ## Adventure progress: highest unlocked level index, best stars per level.
@@ -38,6 +49,9 @@ var _slowmo_left := 0.0
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	load_settings()
+	if player_name == "":
+		player_name = ["Chef", "Snacky", "Crumb", "Nibbles", "Muffin", "Pickle"].pick_random() + str(randi_range(10, 99))
+		save_settings()
 	for s in ["jump", "land", "fall", "break", "coin", "walking"]:
 		sounds[s] = load("res://assets/kenney/sounds/%s.ogg" % s)
 	for f in DirAccess.get_files_at("res://assets/kenney/sfx"):
@@ -64,6 +78,11 @@ func load_settings() -> void:
 	bots = clampi(int(cfg.get_value("game", "bots", bots)), 0, 4)
 	coop = bool(cfg.get_value("game", "coop", coop))
 	party_bots = clampi(int(cfg.get_value("game", "party_bots", party_bots)), 1, 4)
+	party_rounds = clampi(int(cfg.get_value("game", "party_rounds", party_rounds)), 1, 10)
+	player_name = str(cfg.get_value("net", "name", player_name))
+	relay_url = str(cfg.get_value("net", "relay", relay_url))
+	if relay_url == "":
+		relay_url = DEFAULT_RELAY
 	unlocked = int(cfg.get_value("progress", "unlocked", unlocked))
 	var st = cfg.get_value("progress", "stars", {})
 	if st is Dictionary:
@@ -82,6 +101,9 @@ func save_settings() -> void:
 	cfg.set_value("game", "bots", bots)
 	cfg.set_value("game", "coop", coop)
 	cfg.set_value("game", "party_bots", party_bots)
+	cfg.set_value("game", "party_rounds", party_rounds)
+	cfg.set_value("net", "name", player_name)
+	cfg.set_value("net", "relay", relay_url)
 	cfg.set_value("progress", "unlocked", unlocked)
 	cfg.set_value("progress", "stars", stars)
 	for k in layout:
@@ -89,16 +111,18 @@ func save_settings() -> void:
 		cfg.set_value("control_sizes", k, sizes[k])
 	cfg.save(SETTINGS_PATH)
 
-## Records a finished adventure level: best stars, unlocks the next one.
+## Records open world progress: best stars (missions done) for a zone; two
+## stars open the next zone.
 func complete_level(id: String, got_stars: int) -> void:
 	stars[id] = maxi(int(stars.get(id, 0)), got_stars)
-	unlocked = maxi(unlocked, Adventure.index_of(id) + 1)
+	if got_stars >= 2:
+		unlocked = maxi(unlocked, Adventure.index_of(id) + 1)
 	save_settings()
 
 func total_stars() -> int:
 	var n := 0
-	for k in stars:
-		n += int(stars[k])
+	for l in Adventure.LEVELS:
+		n += int(stars.get(l.id, 0))
 	return n
 
 func reset_layout() -> void:

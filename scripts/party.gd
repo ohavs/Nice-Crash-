@@ -61,9 +61,9 @@ func _ring_starts(r: float, y: float) -> void:
 
 func _waffle() -> void:
 	# two layers of waffle tiles over the soup; tiles drop once stepped on
-	var tile := 2.3
+	var tile := 2.5
 	for layer in 2:
-		var n := 7 if layer == 0 else 8
+		var n := 8 if layer == 0 else 9
 		var y := 0.0 if layer == 0 else -6.0
 		for ix in n:
 			for iz in n:
@@ -71,14 +71,14 @@ func _waffle() -> void:
 				if Vector2(p.x, p.z).length() > tile * n * 0.52:
 					continue  # round off the corners
 				_drop_tile(p, tile)
-	_ring_starts(3.6, 0.5)
+	_ring_starts(4.6, 0.5)
 	_item_box(Vector3(0, 1.4, 0))
-	_item_box(Vector3(-4.0, 1.4, 3.5))
-	_item_box(Vector3(4.0, 1.4, -3.5))
-	radius = 7.0
+	_item_box(Vector3(-5.0, 1.4, 4.4))
+	_item_box(Vector3(5.0, 1.4, -4.4))
+	radius = 9.0
 
 func _sumo() -> void:
-	var d := 15.0
+	var d := 18.5
 	var base := Props.base_size("food/pizza")
 	var h := base.y * d / base.x * 1.6
 	var b := AnimatableBody3D.new()
@@ -91,13 +91,13 @@ func _sumo() -> void:
 	_mover(b, func(t): return Transform3D(Basis(Vector3.UP, 0.35 * t + 0.012 * t * t), Vector3(0, -h, 0)))
 	_grow(Vector3(d * 0.5, 0, d * 0.5))
 	_grow(Vector3(-d * 0.5, -h, -d * 0.5))
-	_ring_starts(4.5, 0.0)
-	_item_box(Vector3(-2.5, 1.2, 0))
-	_item_box(Vector3(2.5, 1.2, 0))
+	_ring_starts(5.6, 0.0)
+	_item_box(Vector3(-3.2, 1.2, 0))
+	_item_box(Vector3(3.2, 1.2, 0))
 	radius = d * 0.5
 
 func _sweeper() -> void:
-	var r := 9.0
+	var r := 11.0
 	var island := "models/platform-grass-large-round"
 	var base := Props.base_size(island)
 	var k := r * 2.0 / base.x
@@ -111,10 +111,10 @@ func _sweeper() -> void:
 	_root.add_child(hub_body)
 	_cyl_col(hub_body, 0.8, 1.0, Vector3(0, top + 0.5, 0))
 	# two pins: a long one that keeps speeding up, a shorter one the other way
-	_pin(r * 2.0 + 1.0, top + 0.55, func(t): return 0.55 * t + 0.008 * t * t)
-	_pin(r * 1.2, top + 0.55, func(t): return -0.35 * t - 0.005 * t * t + PI * 0.5)
-	_ring_starts(4.0, top)
-	_item_box(Vector3(5.5, top + 1.2, 0))
+	_pin(r * 2.0 + 1.0, top + 0.55, func(t): return 0.55 * t + 0.008 * t * t + PI / 8.0)
+	_pin(r * 1.2, top + 0.55, func(t): return -0.35 * t - 0.005 * t * t + PI * 0.5 + PI / 8.0)
+	_ring_starts(5.0, top)
+	_item_box(Vector3(6.8, top + 1.2, 0))
 	radius = r
 
 func _pin(length_: float, y: float, angle: Callable) -> void:
@@ -149,42 +149,42 @@ func jump_hint(pos: Vector3) -> bool:
 	return false
 
 func _cannons_arena() -> void:
-	_land(Vector3(0, 0, 0), 16, 16, "sand")
-	_rim(Vector3.ZERO, 16, 16, ["platformer/barrel", "pirate/cannonBall", "nature/grass_large"], 6)
-	for c in [Vector3(-3, 0, -3), Vector3(3.5, 0, 2.5)]:
+	_land(Vector3(0, 0, 0), 20, 20, "sand")
+	_rim(Vector3.ZERO, 20, 20, ["platformer/barrel", "pirate/cannonBall", "nature/grass_large"], 8)
+	for c in [Vector3(-4, 0, -4), Vector3(4.5, 0, 3.2)]:
 		_crates(c, 2)
 	for a in 4:
 		var ang := a * TAU / 4.0 + PI * 0.25
-		_cannon(Vector3(cos(ang) * 14.0, 0.5, sin(ang) * 14.0), 30.0, 2.2)
-	_ring_starts(4.0, 0.0)
+		_cannon(Vector3(cos(ang) * 17.0, 0.5, sin(ang) * 17.0), 34.0, 2.2)
+	_ring_starts(5.0, 0.0)
 	_item_box(Vector3(0, 1.0, 0))
-	radius = 8.0
+	radius = 10.0
 
 func _hill() -> void:
-	_land(Vector3(0, 0, 0), 22, 22)
-	_rim(Vector3.ZERO, 22, 22, ["nature/flower_redA", "nature/flower_yellowA", "nature/grass_large", "nature/plant_bush"], 12)
+	_land(Vector3(0, 0, 0), 27, 27)
+	_rim(Vector3.ZERO, 27, 27, ["nature/flower_redA", "nature/flower_yellowA", "nature/grass_large", "nature/plant_bush"], 14)
 	# the cheese hill in the middle, ramps on all four sides
-	_slab("food/cheese", Vector3(0, 1.4, 0), 6, 6, 1.4)
+	_slab("food/cheese", Vector3(0, 1.4, 0), 7.2, 7.2, 1.4)
 	for i in 4:
 		var dir := Vector3.FORWARD.rotated(Vector3.UP, i * PI * 0.5)
-		_ramp(dir * 6.4, dir * 2.9 + Vector3(0, 1.4, 0), 3.0)
-	_ring_starts(8.0, 0.0)
+		_ramp(dir * 7.6, dir * 3.5 + Vector3(0, 1.4, 0), 3.4)
+	_ring_starts(10.0, 0.0)
 	for a in 4:
 		var ang := a * TAU / 4.0 + PI * 0.25
-		_item_box(Vector3(cos(ang) * 7.0, 1.0, sin(ang) * 7.0))
+		_item_box(Vector3(cos(ang) * 8.6, 1.0, sin(ang) * 8.6))
 	center = Vector3(0, 1.4, 0)
-	radius = 3.0
+	radius = 3.6
 
 func _brawl() -> void:
-	_land(Vector3(0, 0, 0), 20, 20)
-	_solid("town/fountainRound", Vector3(0, 0, 0), 4.0, 2.0, 0.6)
-	_rim(Vector3.ZERO, 20, 20, ["town/lantern", "nature/plant_bush", "platformer/flowers", "nature/flower_yellowA"], 10)
-	_crates(Vector3(-6, 0, 5), 2)
-	_crates(Vector3(6, 0, -5), 2)
-	_ring_starts(6.0, 0.0)
-	for p in [Vector3(-5, 1, -5), Vector3(5, 1, 5), Vector3(-6, 1, 6), Vector3(6, 1, -6), Vector3(0, 1, 7)]:
+	_land(Vector3(0, 0, 0), 25, 25)
+	_solid("town/fountainRound", Vector3(0, 0, 0), 4.6, 2.3, 0.6)
+	_rim(Vector3.ZERO, 25, 25, ["town/lantern", "nature/plant_bush", "platformer/flowers", "nature/flower_yellowA"], 12)
+	_crates(Vector3(-7.5, 0, 6), 2)
+	_crates(Vector3(7.5, 0, -6), 2)
+	_ring_starts(7.5, 0.0)
+	for p in [Vector3(-6, 1, -6), Vector3(6, 1, 6), Vector3(-7.5, 1, 7.5), Vector3(7.5, 1, -7.5), Vector3(0, 1, 9)]:
 		_item_box(p)
-	radius = 10.0
+	radius = 12.5
 
 ## Survival waffle: a tile to head for, near `from` on the same layer.
 func safe_spot(from: Vector3) -> Vector3:

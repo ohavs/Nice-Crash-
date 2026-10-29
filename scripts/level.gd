@@ -12,6 +12,9 @@ extends Node3D
 
 signal finished(p: Player)
 signal coin_collected(p: Player)
+## Network: a coin / present was taken here (index), tell the others.
+signal coin_taken(i: int)
+signal box_taken(i: int)
 
 var id := ""
 ## adventure (reach the goal) | survival (last one standing) |
@@ -55,6 +58,8 @@ var _tiles: Array = []    # survival tiles: [body, home, state]
 var _cannons: Array = []  # [pivot, muzzle, timer, period, range]
 var _rollers: Array = []  # [spawn, lateral, timer, period, kind, velocity]
 var _t := 0.0
+## Network client: the host fires the cannons and rollers (we get copies).
+var remote_hazards := false
 
 func _init() -> void:
 	_root = self
@@ -387,17 +392,28 @@ func _coin(pos: Vector3) -> void:
 	add_child(c)
 	c.global_position = gp
 	var entry := [c, gp.y]
+	var idx := _coins.size()
 	_coins.append(entry)
 	coins_total += 1
 	var area := _area(gp + Vector3(0, 0.3, 0), _sphere(0.75))
+	c.set_meta("area", area)
 	area.body_entered.connect(func(b):
 		if not b is Player or not b.is_human or not c.visible:
 			return
-		c.visible = false
-		area.set_deferred("monitoring", false)
-		Fx.burst(self, gp + Vector3(0, 0.3, 0), "models/coin", 5, 0.2, 4.0)
-		Game.play("coin", 0.1, -4.0)
+		take_coin(idx)
+		coin_taken.emit(idx)
 		coin_collected.emit(b))
+
+func take_coin(i: int) -> void:
+	if i < 0 or i >= _coins.size():
+		return
+	var c: Node3D = _coins[i][0]
+	if not c.visible:
+		return
+	c.visible = false
+	(c.get_meta("area") as Area3D).set_deferred("monitoring", false)
+	Fx.burst(self, c.global_position, "models/coin", 5, 0.2, 4.0)
+	Game.play("coin", 0.1, -4.0)
 
 func _sphere(r: float) -> SphereShape3D:
 	var s := SphereShape3D.new()
@@ -428,16 +444,24 @@ func _item_box(pos: Vector3) -> void:
 	box.global_position = gp
 	var area := _area(gp + Vector3(0, 0.4, 0), _sphere(0.8))
 	var entry := [box, area, gp.y, 0.0]
+	var idx := _boxes.size()
 	_boxes.append(entry)
 	area.body_entered.connect(func(b):
-		if not b is Player or entry[3] > 0.0 or b.item != "" or b.is_enemy:
+		if not b is Player or entry[3] > 0.0 or b.item != "" or b.is_enemy or b.puppet:
 			return
 		var keys := Player.ITEMS.keys()
 		b.give_item(keys[randi() % keys.size()])
-		entry[3] = 6.0
-		box.visible = false
-		Fx.burst(self, gp + Vector3(0, 0.4, 0), "holiday/presentRound", 6, 0.25, 5.0)
+		take_box(idx)
+		box_taken.emit(idx)
 		Game.play("powerup", 0.05, -2.0 if b.is_human else -14.0))
+
+func take_box(i: int) -> void:
+	if i < 0 or i >= _boxes.size() or _boxes[i][3] > 0.0:
+		return
+	var entry: Array = _boxes[i]
+	entry[3] = 6.0
+	(entry[0] as Node3D).visible = false
+	Fx.burst(self, (entry[0] as Node3D).global_position, "holiday/presentRound", 6, 0.25, 5.0)
 
 func item_boxes() -> Array:
 	return _boxes.filter(func(e): return e[3] <= 0.0).map(func(e): return (e[0] as Node3D).global_position)
@@ -445,6 +469,7 @@ func item_boxes() -> Array:
 func _crates(pos: Vector3, n := 3) -> void:
 	for i in n:
 		var c := RigidBody3D.new()
+		c.add_to_group("grabbable")
 		c.mass = 0.6
 		c.collision_layer = 1
 		c.collision_mask = 1 | 2 | 4 | 8
@@ -938,7 +963,7 @@ func _update_cannons(delta: float) -> void:
 		var yaw := atan2(-to.x, -to.z)
 		pivot.rotation.y = lerp_angle(pivot.rotation.y, yaw, delta * 3.0)
 		c[2] -= delta
-		if c[2] <= 0.0:
+		if c[2] <= 0.0 and not remote_hazards:
 			c[2] = c[3] + randf_range(-0.4, 0.6)
 			var muzzle: Node3D = c[1]
 			var flat := Vector3(to.x, 0, to.z)
@@ -955,7 +980,7 @@ func _update_cannons(delta: float) -> void:
 func _update_rollers(delta: float) -> void:
 	for r in _rollers:
 		r[2] -= delta
-		if r[2] <= 0.0:
+		if r[2] <= 0.0 and not remote_hazards:
 			r[2] = r[3] + randf_range(-0.3, 0.4)
 			var pos: Vector3 = r[0] + r[1] * randf_range(-1.0, 1.0)
 			Projectile.fire(self, r[4], pos, r[5])

@@ -9,6 +9,8 @@ extends Node
 ##   koth     - party: get on the hill and shove everyone else off it
 ##   brawl    - party: grab items, hunt the nearest player
 ##   guard    - veggie brawler: patrol around home, charge and bonk players
+##   follow   - open world buddy: tags along with its friend, smashes any
+##              skeleton that comes close, grabs presents on the way
 
 var mode := "race"
 var level: Level
@@ -50,6 +52,10 @@ func _physics_process(delta: float) -> void:
 			_koth(delta)
 		"brawl":
 			_brawl(delta)
+		"follow":
+			_follow(delta)
+		"quest":
+			_quest(delta)
 		_:
 			_route(delta)
 
@@ -274,3 +280,86 @@ func _brawl(delta: float) -> void:
 	_go(goal, delta, 0.3)
 	if _target and _target.global_position.distance_to(p.global_position) < 1.4 and randf() < 0.08 + skill * 0.08:
 		p.action_requested = true
+
+# ---------------------------------------------------------------- open world
+
+func _follow(delta: float) -> void:
+	if buddy == null or not is_instance_valid(buddy):
+		p.input_dir = Vector3.ZERO
+		return
+	var pos := p.global_position
+	if _think <= 0.0:
+		_think = randf_range(0.25, 0.45)
+		p.checkpoint = buddy.checkpoint
+		# the nearest skeleton near us and our friend
+		_foe_e = null
+		var best := 10.0
+		for o in p.get_tree().get_nodes_in_group("enemies"):
+			var e := o as Enemy
+			if e.is_dead():
+				continue
+			var d := e.global_position.distance_to(pos)
+			if d < best and e.global_position.distance_to(buddy.global_position) < 16.0:
+				best = d
+				_foe_e = e
+		_wander = Vector3.ZERO
+		if p.item == "" and _foe_e == null:
+			for b: Vector3 in level.item_boxes():
+				if b.distance_to(pos) < 8.0:
+					_wander = b
+	var goal := buddy.global_position + Vector3(cos(_lane * 3.0), 0, sin(_lane * 3.0)) * 2.6
+	if _foe_e and is_instance_valid(_foe_e) and not _foe_e.is_dead():
+		goal = _foe_e.global_position
+		var d := _foe_e.global_position.distance_to(pos)
+		var fwd := p.forward()
+		var to := (_foe_e.global_position - pos).normalized()
+		if p.item in ["tomato", "cookie", "melon"] and d < 10.0 and fwd.dot(to) > 0.8:
+			p.action_requested = randf() < 0.15
+		elif d < 1.6 and randf() < 0.2 + skill * 0.15:
+			p.action_requested = true
+	elif _wander != Vector3.ZERO:
+		goal = _wander
+	# lost our friend: catch up (pop back next to them)
+	if pos.distance_to(buddy.global_position) > 30.0 and not buddy.is_crashed and buddy.is_grounded():
+		p.checkpoint = buddy.global_position + Vector3(1.5, 0, 1.5)
+		p.respawn()
+		return
+	var to := goal - pos
+	to.y = 0
+	var slow := 1.4 if _foe_e else 2.2
+	p.input_dir = to.normalized() * clampf(to.length() / 4.0, 0.0, 1.0) if to.length() > slow else Vector3.ZERO
+	if p.input_dir.length() > 0.2:
+		_hop(p.input_dir.normalized(), goal)
+		_unstick(delta, p.input_dir.normalized())
+	if buddy.linear_velocity.y > 6.0 and p.is_grounded() and to.length() < 6.0:
+		p.jump_requested = true  # jump when they jump
+
+var _foe_e: Enemy
+
+## Test pilot (tools/playtest.gd): heads for the nearest mission target,
+## smashing skeletons on the way.
+func _quest(delta: float) -> void:
+	if _goal_node == null:
+		_goal_node = Node3D.new()
+		p.get_parent().add_child(_goal_node)
+		buddy = null
+	_think_q -= delta
+	if _think_q <= 0.0:
+		_think_q = 0.5
+		var t: Array = level.next_target(p.global_position) if level.has_method("next_target") else []
+		_goal_node.global_position = t[0] if not t.is_empty() else p.global_position
+	var pos := p.global_position
+	var best := 9.0
+	var foe: Enemy
+	for o in p.get_tree().get_nodes_in_group("enemies"):
+		var e := o as Enemy
+		if not e.is_dead() and e.global_position.distance_to(pos) < best:
+			best = e.global_position.distance_to(pos)
+			foe = e
+	var goal: Vector3 = foe.global_position if foe else _goal_node.global_position
+	if foe and best < 1.7:
+		p.action_requested = true
+	_go(goal, delta, 0.4)
+
+var _goal_node: Node3D
+var _think_q := 0.0

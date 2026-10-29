@@ -140,8 +140,8 @@ grab kaykit/skeletons "$S/Assets/gltf" Skeleton_Blade Skeleton_Axe Skeleton_Staf
 pack https://github.com/tilakpatell/tilakverse-assets quaternius '/quaternius/stylized-nature-megakit/glTF/'
 grab quaternius/nature "$WORK/quaternius/quaternius/stylized-nature-megakit/glTF" \
   CommonTree_1 CommonTree_2 CommonTree_3 CommonTree_4 CommonTree_5 Pine_1 Pine_2 Pine_3 Pine_5 \
-  Birch_1 Birch_3 GiantPine_1 GiantPine_3 DeadTree_1 DeadTree_2 DeadTree_3 TwistedTree_1 TwistedTree_3 \
-  CherryBlossom_1 CherryBlossom_2 TallThick_1 Bush_Common Bush_Common_Flowers Bush_Large Bush_Long_1 \
+  Birch_3 GiantPine_1 GiantPine_3 DeadTree_1 DeadTree_2 DeadTree_3 TwistedTree_1 TwistedTree_3 \
+  Bush_Common Bush_Common_Flowers Bush_Large Bush_Long_1 \
   Fern_1 Fern_2 Flower_1_Group Flower_3_Group Flower_4_Group Flower_7_Group Grass_Common_Short \
   Grass_Common_Tall Grass_Wispy_Tall Grass_Wheat Clover_1 Mushroom_Common Mushroom_RedCap Mushroom_Laetiporus \
   Plant_1_Big Plant_7_Big Rock_Big_1 Rock_Big_2 Rock_Medium_1 Rock_Medium_2 Rock_Medium_3 \

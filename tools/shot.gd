@@ -29,7 +29,7 @@ func _setup() -> void:
 	game.play_mode = a[0]
 	if OS.has_environment("PT_SKIN"):
 		game.skin = OS.get_environment("PT_SKIN")
-	game.bots = 4
+	game.bots = int(OS.get_environment("PT_BOTS")) if OS.has_environment("PT_BOTS") else 2
 	game.party_bots = 4
 	if a[0] == "party":
 		game.party_id = a[1]
@@ -63,7 +63,7 @@ func _process(delta: float) -> bool:
 		_main.set_physics_process(false)
 		var b = load("res://scripts/bot.gd").new()
 		b.level = _main.level
-		b.mode = {"survival": "survive", "koth": "koth", "brawl": "brawl"}.get(_main.mode, "race")
+		b.mode = {"survival": "survive", "koth": "koth", "brawl": "brawl"}.get(_main.mode, "quest")
 		_main.player.add_child(b)
 	if _stage == 0 and _t > 4.2 + _wait:
 		_stage = 1

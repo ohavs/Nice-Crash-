@@ -24,7 +24,10 @@ var thrower: Player
 var _life := 0.0
 var _done := false
 
-static func fire(parent: Node, k: String, pos: Vector3, vel: Vector3, by: Player = null) -> Projectile:
+## `remote`: a copy of something another peer fired (don't pass it on).
+static func fire(parent: Node, k: String, pos: Vector3, vel: Vector3, by: Player = null, remote := false) -> Projectile:
+	if not remote:
+		Net.fire(k, pos, vel, by.net_id if by else "")
 	var p := Projectile.new()
 	p.kind = k
 	p.thrower = by
@@ -72,6 +75,11 @@ func _on_hit(b: Node) -> void:
 	if _done:
 		return
 	var d: Dictionary = KINDS[kind]
+	if (b is Player and b.puppet) or (b is Enemy and b.puppet):
+		# network: whoever owns the target judges the hit; here it's just a splat
+		if b != thrower and linear_velocity.length() > 2.5 and not d.get("keep", false):
+			_pop()
+		return
 	if b is Enemy and not d.get("hostile", false):
 		if linear_velocity.length() < 2.5:
 			return
